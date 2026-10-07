@@ -1,0 +1,3 @@
+Прочитай docs/spec.md, api/openapi.yaml, features/*.feature и migrations/0001_init.sql из проекта sdd_service. Это spec-driven проект VulnRAG.
+ Сгенерируй Go-каркас сервера через oapi-codegen по openapi.yaml (chi-server), затем реализуй бизнес-логику: /health, POST /api/v1/ask (pgvector-поиск top-5 + генерация в Ollama), POST /api/v1/documents (чанкинг + эмбеддинги).
+Подготовь docker-compose (app + postgres+pgvector + ollama), godog-шаги для features/*.feature и go test. Соблюдай ограничения из спеки (1 МБ, 60 с, 422/413/504).
