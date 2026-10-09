@@ -16,7 +16,7 @@ CREATE TABLE chunks (
 
 CREATE TABLE embeddings (
     chunk_id   BIGINT PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
-    embedding  vector(768) NOT NULL   -- размерность зависит от модели Ollama
+    embedding  vector(768) NOT NULL   -- размерность соответствует модели Ollama (nomic-embed-text / paraphrase-multilingual)
 );
 
 CREATE INDEX ON embeddings USING hnsw (embedding vector_cosine_ops);

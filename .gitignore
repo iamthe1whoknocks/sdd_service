@@ -1,0 +1,16 @@
+# Локальные секреты и переменные окружения
+.env
+
+# Артефакты сборки Go
+server
+*.test
+*.out
+
+# Node / SPA
+web/node_modules/
+web/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,15 @@
+# Контекст сборки образа app — исключаем всё, что не нужно для Go-бинаря
+.git
+.github
+docs
+features
+web
+migrations
+*.md
+.env
+.env.*
+docker
+Makefile
+docker-compose*.yml
+.prettierrc
+.editorconfig

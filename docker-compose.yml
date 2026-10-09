@@ -1,0 +1,111 @@
+# VulnRAG — стек: postgres + pgvector, ollama, migrate, app (Go), web (nginx).
+# Все значения с дефолтами можно переопределить в .env (см. .env.example).
+#
+# Цепочка запуска:
+#   postgres (healthy) -> migrate (completed) -> app (после БД, миграций и ollama)
+#   ollama (healthy)   ------------------------> app -> web
+
+name: vulnrag
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vulnrag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vulnrag}
+      POSTGRES_DB: ${POSTGRES_DB:-vulnrag}
+    # Лимит RAM: ноутбук 16 ГБ, БД держим скромной
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=50"]
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vulnrag} -d ${POSTGRES_DB:-vulnrag}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  # Однократно применяет миграции из ./migrations и завершается
+  migrate:
+    image: migrate/migrate:v4.18.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-vulnrag}:${POSTGRES_PASSWORD:-vulnrag}@postgres:5432/${POSTGRES_DB:-vulnrag}?sslmode=disable
+    volumes:
+      - ./migrations:/migrations
+    # В JSON-массиве command нет shell, поэтому URL подставляет сам compose
+    # (значения берутся из .env / переменных окружения хоста)
+    command:
+      - "-path=/migrations"
+      - "-database=postgres://${POSTGRES_USER:-vulnrag}:${POSTGRES_PASSWORD:-vulnrag}@postgres:5432/${POSTGRES_DB:-vulnrag}?sslmode=disable"
+      - "up"
+    restart: "no"
+
+  ollama:
+    image: ollama/ollama:latest
+    environment:
+      # Лимиты под 16 ГБ RAM: одна модель в памяти, один параллельный запрос
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-paraphrase-multilingual}
+      OLLAMA_LLM_MODEL: ${OLLAMA_LLM_MODEL:-qwen2.5:3b}
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    volumes:
+      - ./docker/ollama/entrypoint.sh:/entrypoint.sh:ro
+      - ollama-models:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    # Healthcheck честный: считается здоровым только когда LLM уже скачана.
+    # В образе ollama нет curl, поэтому используем ollama list (CLI ходит
+    # в локальный API сам). Первый pull ~2 ГБ может занять до 30 минут
+    # (interval 15s * retries 120).
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q \"${OLLAMA_LLM_MODEL:-qwen2.5:3b}\" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 120
+      start_period: 10s
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-vulnrag}:${POSTGRES_PASSWORD:-vulnrag}@postgres:5432/${POSTGRES_DB:-vulnrag}?sslmode=disable
+      OLLAMA_HOST: http://ollama:11434
+      EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-paraphrase-multilingual}
+      LLM_MODEL: ${OLLAMA_LLM_MODEL:-qwen2.5:3b}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      ollama:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      # дефолт 8088: порт 80 на хосте занят системным nginx/apache;
+      # переопределяется через WEB_PORT в .env
+      - "${WEB_PORT:-8088}:80"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  ollama-models:

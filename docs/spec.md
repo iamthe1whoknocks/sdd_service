@@ -1,6 +1,6 @@
 # VulnRAG — спецификация (Spec-Driven Development)
 
-> Статус: **утверждена** (v0.2.0)
+> Статус: **утверждена** (v0.3.0)
 > Формат: единый источник истины (single source of truth) для генерации кода и контрактных тестов.
 > Сопутствующие артефакты: `api/openapi.yaml`, `features/*.feature`, SQL-миграция (см. разделы 5–7), SPA в `web/` (см. раздел 8).
 
@@ -305,13 +305,14 @@ CREATE INDEX ON embeddings USING hnsw (embedding vector_cosine_ops);
 
 ## 9. Нефункциональные требования
 
-- Язык бэкенда: **Go 1.23+**, `net/http` (маршрутизация std-lib или `chi`).
+- Язык бэкенда: **Go 1.23+**, маршрутизация — **Echo v4** (`github.com/labstack/echo/v4`).
 - БД: **PostgreSQL 16** с расширением **pgvector**.
 - LLM и эмбеддинги: **Ollama** (локально; модель эмбеддингов, напр. `nomic-embed-text`).
 - Фронтенд: **Node.js 20+**, Vite + React + TypeScript в каталоге `web/`.
 - Деплой: **docker compose** (`app` + `postgres` + `ollama` + `web`-nginx, раздающий `web/dist` и проксирующий `/api` → `app:8080`).
-- Ошибки API — JSON в формате RFC 7807 (`{error: {type, detail}}`).
-- Генерация каркаса сервера: `oapi-codegen -generate chi-server` по `api/openapi.yaml`.
+- Ошибки API — JSON в формате `{error: {type, detail}}`.
++ Обязательные middleware: Logger, Recover, RequestID, Timeout (60s для `/ask`).
+- Генерация каркаса сервера: `oapi-codegen -generate echo-server` по `api/openapi.yaml`.
 - Контрактные тесты: `godog` по `features/*.feature`.
 
 ## 10. Вне скоупа MVP
@@ -328,7 +329,7 @@ CREATE INDEX ON embeddings USING hnsw (embedding vector_cosine_ops);
 - [x] Выбор фреймворка фронтенда — Vite + React + TypeScript (решено 2026-10-05).
 - [ ] Способ генерации TS-типов из `api/openapi.yaml`: вручную vs `openapi-typescript`.
 - [ ] Отображение `url` источников в UI (ссылка vs текст), формат сниппета.
-- [ ] Выбор конкретной модели LLM в Ollama (`llama3.x` vs `qwen` vs др.).
+- [х] Выбор конкретной модели LLM в Ollama (`llama3.x` vs `qwen` vs др.).
 - [ ] Язык ответов (ru/en) — определяется промптом.
 - [ ] Формат сниппетов источников (первые N символов чанка).
 - [ ] Размерность вектора в `embeddings` (зависит от модели эмбеддингов).
@@ -341,3 +342,4 @@ CREATE INDEX ON embeddings USING hnsw (embedding vector_cosine_ops);
 |---|---|---|
 | 0.1.0 | 2026-10-05 | Первая утверждённая версия по итогам интерактивной SDD-сессии |
 | 0.2.0 | 2026-10-05 | Добавлен веб-интерфейс: SPA (Vite + React + TS) с двумя опциями — запрос и сохранение документа; обновлены FR/NFR, диаграмма, границы скоупа и TODO |
+| 0.3.0 | 2026-10-09 | Зафиксирована маршрутизация — Echo v4; добавлены обязательные middleware |

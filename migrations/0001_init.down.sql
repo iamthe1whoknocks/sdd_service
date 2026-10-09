@@ -1,0 +1,7 @@
+DROP INDEX IF EXISTS embeddings_embedding_idx;
+
+DROP TABLE IF EXISTS embeddings;
+DROP TABLE IF EXISTS chunks;
+DROP TABLE IF EXISTS documents;
+
+DROP EXTENSION IF EXISTS vector;
