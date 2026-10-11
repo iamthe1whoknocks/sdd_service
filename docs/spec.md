@@ -311,7 +311,8 @@ CREATE INDEX ON embeddings USING hnsw (embedding vector_cosine_ops);
 - Фронтенд: **Node.js 20+**, Vite + React + TypeScript в каталоге `web/`.
 - Деплой: **docker compose** (`app` + `postgres` + `ollama` + `web`-nginx, раздающий `web/dist` и проксирующий `/api` → `app:8080`).
 - Ошибки API — JSON в формате `{error: {type, detail}}`.
-+ Обязательные middleware: Logger, Recover, RequestID, Timeout (60s для `/ask`).
+- Логирование: **Uber Go Zap** с `CapitalColorLevelEncoder` (цветные уровни в console-encoder). Минимальный уровень контролируется переменной `LOG_LEVEL` (по умолчанию `info`).
+- Обязательные middleware: Logger, Recover, RequestID, Timeout (60s для `/ask`).
 - Генерация каркаса сервера: `oapi-codegen -generate echo-server` по `api/openapi.yaml`.
 - Контрактные тесты: `godog` по `features/*.feature`.
 
