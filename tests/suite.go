@@ -126,7 +126,14 @@ func (s *sharedState) loadDocument() error {
 }
 
 func (s *sharedState) postAsk(question string) error {
-	body := fmt.Sprintf(`{"question":"%s"}`, question)
+	type Question struct{
+		Question string `json:"question"`
+	}
+	questionStruct:= &Question{Question:question}
+	body, err := json.Marshal(questionStruct)
+	if err != nil {
+		return err
+	}
 	return s.doRequest("POST", "/api/v1/ask", []byte(body))
 }
 

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 )
 
 // OllamaClient provides methods to interact with Ollama API.
@@ -25,7 +26,7 @@ func NewOllamaClient() *OllamaClient {
 		EmbedModel: getEnvDefault("EMBED_MODEL", "paraphrase-multilingual"),
 		LLMModel:   getEnvDefault("LLM_MODEL", "qwen2.5:3b"),
 		client: &http.Client{
-			Timeout: 65 * 60, // Slightly more than 60s timeout for ask
+			Timeout: 65 * time.Second, // Slightly more than 60s timeout for ask
 		},
 	}
 }
@@ -50,11 +51,11 @@ type EmbeddingResponse struct {
 
 // GenerateRequest is the request body for the /api/generate endpoint.
 type GenerateRequest struct {
-	Model    string `json:"model"`
-	Prompt   string `json:"prompt"`
-	Stream   bool   `json:"stream"`
-	Format   string `json:"format,omitempty"`
-	Options  map[string]interface{} `json:"options,omitempty"`
+	Model   string                 `json:"model"`
+	Prompt  string                 `json:"prompt"`
+	Stream  bool                   `json:"stream"`
+	Format  string                 `json:"format,omitempty"`
+	Options map[string]interface{} `json:"options,omitempty"`
 }
 
 // GenerateResponse is the streaming response from the /api/generate endpoint.
@@ -82,11 +83,15 @@ func (c *OllamaClient) GenerateEmbedding(ctx context.Context, text string) ([]fl
 		return nil, fmt.Errorf("marshal embedding request: %w", err)
 	}
 
-	resp, err := c.client.Post(
-		c.BaseURL+"/api/embeddings",
-		"application/json",
-		bytes.NewReader(jsonBytes),
-	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/api/embeddings", bytes.NewReader(jsonBytes))
+	if err != nil {
+		return nil, fmt.Errorf("error creating post request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+
 	if err != nil {
 		return nil, fmt.Errorf("call ollama embeddings: %w", err)
 	}
@@ -125,12 +130,15 @@ func (c *OllamaClient) GenerateAnswer(ctx context.Context, prompt string) (strin
 	if err != nil {
 		return "", fmt.Errorf("marshal generate request: %w", err)
 	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/api/generate", bytes.NewReader(jsonBytes))
+	if err != nil {
+		return "", fmt.Errorf("error creating post request: %w", err)
+	}
 
-	resp, err := c.client.Post(
-		c.BaseURL+"/api/generate",
-		"application/json",
-		bytes.NewReader(jsonBytes),
-	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+
 	if err != nil {
 		return "", fmt.Errorf("call ollama generate: %w", err)
 	}

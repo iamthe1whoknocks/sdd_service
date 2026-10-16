@@ -3,6 +3,7 @@ package rag
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -35,38 +36,47 @@ func (c *Chunker) Chunk(content string) []string {
 		return nil
 	}
 
-	// If content is smaller than chunk size, return as-is
-	if len(content) <= c.ChunkSize {
+	runes := []rune(content)
+	total := len(runes)
+
+	// If content is smaller than chunk size, return as-is (rune-based,
+	// so multi-byte text is handled consistently).
+	if total <= c.ChunkSize {
 		return []string{content}
 	}
 
 	var chunks []string
-	runes := []rune(content)
-	total := len(runes)
 
-	for start := 0; start < total; start += c.ChunkSize - c.Overlap {
+	// Boundary-driven stride: each next chunk starts Overlap characters
+	// before the end of the current one.
+	for start := 0; start < total; {
 		end := start + c.ChunkSize
 		if end > total {
 			end = total
 		}
 
-		// Try to break at word boundary
+		// Try to break at a word (or sentence) boundary.
 		chunkEnd := findWordBoundary(runes, start, end)
 		chunk := string(runes[start:chunkEnd])
 
-		// Skip tiny chunks
-		if len([]rune(chunk)) >= MinChunkSize {
+		// Skip tiny chunks.
+		if utf8.RuneCountInString(chunk) >= MinChunkSize {
 			chunks = append(chunks, chunk)
 		}
 
-		start = chunkEnd - c.Overlap
-		if start < chunkEnd {
-			start = chunkEnd
-		}
-
-		if start >= total {
+		// The end of the document is already covered by this chunk.
+		if chunkEnd >= total {
 			break
 		}
+
+		// Overlap the tail of the current chunk, but always move forward:
+		// a boundary very close to start must not push us backwards
+		// (which would cause an infinite loop).
+		nextStart := chunkEnd - c.Overlap
+		if nextStart <= start {
+			nextStart = chunkEnd
+		}
+		start = nextStart
 	}
 
 	return chunks

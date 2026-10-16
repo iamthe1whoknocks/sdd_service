@@ -42,58 +42,8 @@ func (r *DB) CreateDocument(ctx context.Context, title, content string) (string,
 	return id, nil
 }
 
-// CreateChunks inserts chunks for a document and returns their IDs.
-func (r *DB) CreateChunks(ctx context.Context, docID string, chunks []string) ([]int64, error) {
-	if len(chunks) == 0 {
-		return nil, nil
-	}
 
-	batch := &pgx.Batch{}
-	for i := range chunks {
-		batch.Queue(
-			"INSERT INTO chunks (document_id, content, position) VALUES ($1, $2, $3) RETURNING id",
-			docID, chunks[i], i,
-		)
-	}
 
-	br := r.pool.SendBatch(ctx, batch)
-	defer br.Close()
-
-	ids := make([]int64, 0, len(chunks))
-	for range chunks {
-		var id int64
-		if err := br.QueryRow().Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, nil
-}
-
-// UpsertEmbeddings inserts or updates embeddings for chunks.
-func (r *DB) UpsertEmbeddings(ctx context.Context, chunkIDs []int64, embeddings [][]float32) error {
-	if len(chunkIDs) != len(embeddings) {
-		return fmt.Errorf("chunkIDs and embeddings length mismatch")
-	}
-
-	batch := &pgx.Batch{}
-	for i := range chunkIDs {
-		batch.Queue(
-			"INSERT INTO embeddings (chunk_id, embedding) VALUES ($1, $2) ON CONFLICT (chunk_id) DO UPDATE SET embedding = EXCLUDED.embedding",
-			chunkIDs[i], embeddings[i],
-		)
-	}
-
-	br := r.pool.SendBatch(ctx, batch)
-	defer br.Close()
-
-	for range chunkIDs {
-		if _, err := br.Exec(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 // SearchSimilar retrieves top-k similar chunks based on a query embedding.
 func (r *DB) SearchSimilar(ctx context.Context, queryEmbedding []float32, limit int) ([]SearchResult, error) {
@@ -121,4 +71,63 @@ func (r *DB) SearchSimilar(ctx context.Context, queryEmbedding []float32, limit 
 		results = append(results, sr)
 	}
 	return results, rows.Err()
+}
+
+
+// CreateDocumentWithChunks atomically inserts a document, its chunks and
+// embeddings in a single transaction.
+func (r *DB) CreateDocumentWithChunks(ctx context.Context, title, content string, chunks []string, embeddings [][]float32) (string, error) {
+	if len(chunks) != len(embeddings) {
+		return "", fmt.Errorf("chunks and embeddings length mismatch")
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx) // no-op after successful Commit
+
+	var docID string
+	if err := tx.QueryRow(ctx,
+		"INSERT INTO documents (title, content) VALUES ($1, $2) RETURNING id",
+		title, content,
+	).Scan(&docID); err != nil {
+		return "", err
+	}
+
+	// Chunks в батче внутри транзакции
+	batch := &pgx.Batch{}
+	for i, ch := range chunks {
+		batch.Queue(
+			"INSERT INTO chunks (document_id, content, position) VALUES ($1, $2, $3) RETURNING id",
+			docID, ch, i,
+		)
+	}
+	br := tx.SendBatch(ctx, batch)
+	chunkIDs := make([]int64, 0, len(chunks))
+	for range chunks {
+		var id int64
+		if err := br.QueryRow().Scan(&id); err != nil {
+			br.Close()
+			return "", err
+		}
+		chunkIDs = append(chunkIDs, id)
+	}
+	if err := br.Close(); err != nil {
+		return "", err
+	}
+
+	for i, id := range chunkIDs {
+		if _, err := tx.Exec(ctx,
+			"INSERT INTO embeddings (chunk_id, embedding) VALUES ($1, $2)",
+			id, embeddings[i],
+		); err != nil {
+			return "", err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+	return docID, nil
 }

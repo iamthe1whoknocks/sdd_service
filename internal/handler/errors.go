@@ -7,17 +7,17 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+type ErrorResponse struct {
+	Detail string `json:"detail,omitempty"`
+	Type   string `json:"type,omitempty"`
+}
+
 // ErrResponse builds a RFC 7807-style error response.
 func ErrResponse(code int, etype, detail string) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		errResp := Error{
-			Error: struct {
-				Detail *string `json:"detail,omitempty"`
-				Type   *string `json:"type,omitempty"`
-			}{
-				Type:   &etype,
-				Detail: &detail,
-			},
+		errResp := ErrorResponse{
+			Type:   etype,
+			Detail: detail,
 		}
 		return c.JSON(code, errResp)
 	}

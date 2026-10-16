@@ -3,11 +3,15 @@ package handler
 import (
 	"net/http"
 	"strings"
+	"unicode/utf8"
+
+	"vulnrag/internal/rag"
+
+	"vulnrag/internal/repository"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	openapi_types "github.com/oapi-codegen/runtime/types"
-	"vulnrag/internal/rag"
 )
 
 // AskHandler handles POST /api/v1/ask requests.
@@ -19,65 +23,25 @@ type AskHandler struct {
 func (h *AskHandler) PostApiV1Ask(c echo.Context) error {
 	var req AskRequest
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, Error{
-			Error: struct {
-				Detail *string `json:"detail,omitempty"`
-				Type   *string `json:"type,omitempty"`
-			}{
-				Type:   strPtr("invalid_request"),
-				Detail: strPtr("malformed JSON request body"),
-			},
-		})
+		ErrResponse(http.StatusBadRequest,"invalid_request","malformed JSON request body")
 	}
 
 	// Validate question
 	question := strings.TrimSpace(req.Question)
 	if len(question) == 0 {
-		return c.JSON(http.StatusUnprocessableEntity, Error{
-			Error: struct {
-				Detail *string `json:"detail,omitempty"`
-				Type   *string `json:"type,omitempty"`
-			}{
-				Type:   strPtr("validation_error"),
-				Detail: strPtr("question is required"),
-			},
-		})
+		ErrResponse(http.StatusUnprocessableEntity,"validation_error","question is required")
 	}
-	if len(question) > 4000 {
-		return c.JSON(http.StatusUnprocessableEntity, Error{
-			Error: struct {
-				Detail *string `json:"detail,omitempty"`
-				Type   *string `json:"type,omitempty"`
-			}{
-				Type:   strPtr("validation_error"),
-				Detail: strPtr("question exceeds 4000 characters"),
-			},
-		})
+	if utf8.RuneCountInString(question) > 4000 {
+		ErrResponse(http.StatusUnprocessableEntity,"validation_error","question exceeds 4000 characters")
 	}
 
 	// Call RAG engine
-	result, sources, err := h.Engine.Ask(c.Request().Context(), question)
+	answer, sources, err := h.Engine.Ask(c.Request().Context(), question)
 	if err != nil {
 		if strings.Contains(err.Error(), "context deadline exceeded") {
-			return c.JSON(http.StatusGatewayTimeout, Error{
-				Error: struct {
-					Detail *string `json:"detail,omitempty"`
-					Type   *string `json:"type,omitempty"`
-				}{
-					Type:   strPtr("timeout"),
-					Detail: strPtr("generation timed out after 60 seconds"),
-				},
-			})
+			ErrResponse(http.StatusGatewayTimeout,"timeout","generation timed out after 60 seconds")
 		}
-		return c.JSON(http.StatusInternalServerError, Error{
-			Error: struct {
-				Detail *string `json:"detail,omitempty"`
-				Type   *string `json:"type,omitempty"`
-			}{
-				Type:   strPtr("internal_error"),
-				Detail: strPtr(err.Error()),
-			},
-		})
+		ErrResponse(http.StatusInternalServerError,"internal_error",err.Error())
 	}
 
 	// Build response sources
@@ -91,7 +55,7 @@ func (h *AskHandler) PostApiV1Ask(c echo.Context) error {
 	}
 
 	resp := AskResponse{
-		Answer:  result.Answer,
+		Answer:  answer,
 		Sources: responseSources,
 	}
 
@@ -107,92 +71,41 @@ type DocumentsHandler struct {
 func (h *DocumentsHandler) PostApiV1Documents(c echo.Context) error {
 	var req DocumentRequest
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, Error{
-			Error: struct {
-				Detail *string `json:"detail,omitempty"`
-				Type   *string `json:"type,omitempty"`
-			}{
-				Type:   strPtr("invalid_request"),
-				Detail: strPtr("malformed JSON request body"),
-			},
-		})
+		ErrResponse(http.StatusBadRequest,"invalid_request","malformed JSON request body")
 	}
 
 	// Validate title
 	title := strings.TrimSpace(req.Title)
 	if len(title) == 0 {
-		return c.JSON(http.StatusUnprocessableEntity, Error{
-			Error: struct {
-				Detail *string `json:"detail,omitempty"`
-				Type   *string `json:"type,omitempty"`
-			}{
-				Type:   strPtr("validation_error"),
-				Detail: strPtr("title is required"),
-			},
-		})
+			ErrResponse(http.StatusUnprocessableEntity,"validation_error","title is required")
 	}
-	if len(req.Title) > 500 {
-		return c.JSON(http.StatusUnprocessableEntity, Error{
-			Error: struct {
-				Detail *string `json:"detail,omitempty"`
-				Type   *string `json:"type,omitempty"`
-			}{
-				Type:   strPtr("validation_error"),
-				Detail: strPtr("title exceeds 500 characters"),
-			},
-		})
+
+	// Validate title
+	err := repository.ValidateTitle(req.Title)
+	if err !=nil {
+		ErrResponse(http.StatusUnprocessableEntity,"validation_error","title exceeds 500 characters")
 	}
 
 	// Validate content size
-	if len(req.Content) > 1048576 {
-		return c.JSON(http.StatusRequestEntityTooLarge, Error{
-			Error: struct {
-				Detail *string `json:"detail,omitempty"`
-				Type   *string `json:"type,omitempty"`
-			}{
-				Type:   strPtr("payload_too_large"),
-				Detail: strPtr("content exceeds 1 MB limit"),
-			},
-		})
+	err = repository.ValidateQuestion(req.Content)
+	if err !=nil {
+		ErrResponse(http.StatusRequestEntityTooLarge,"payload_too_large","content exceeds 1 MB limit")
 	}
 	if len(strings.TrimSpace(req.Content)) == 0 {
-		return c.JSON(http.StatusUnprocessableEntity, Error{
-			Error: struct {
-				Detail *string `json:"detail,omitempty"`
-				Type   *string `json:"type,omitempty"`
-			}{
-				Type:   strPtr("validation_error"),
-				Detail: strPtr("content is required"),
-			},
-		})
+		ErrResponse(http.StatusUnprocessableEntity,"validation_error","content is required")
 	}
 
 	// Index the document
 	docID, err := h.Engine.IndexDocument(c.Request().Context(), req.Title, req.Content)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, Error{
-			Error: struct {
-				Detail *string `json:"detail,omitempty"`
-				Type   *string `json:"type,omitempty"`
-			}{
-				Type:   strPtr("internal_error"),
-				Detail: strPtr(err.Error()),
-			},
-		})
+		ErrResponse(http.StatusUnprocessableEntity,"internal_error",err.Error())
 	}
 
 	// Parse docID as UUID
 	docUUID, err := uuid.Parse(docID)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, Error{
-			Error: struct {
-				Detail *string `json:"detail,omitempty"`
-				Type   *string `json:"type,omitempty"`
-			}{
-				Type:   strPtr("internal_error"),
-				Detail: strPtr("invalid document ID"),
-			},
-		})
+				ErrResponse(http.StatusInternalServerError,"internal_error","invalid document ID")
+
 	}
 
 	resp := DocumentResponse{

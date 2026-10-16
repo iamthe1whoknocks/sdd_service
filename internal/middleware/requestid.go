@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,9 +26,9 @@ func RequestID() echo.MiddlewareFunc {
 
 // ErrGatewayTimeout returns a 504 Gateway Timeout error.
 func ErrGatewayTimeout() error {
-	return &echo.HTTPError{
-		Code:    http.StatusGatewayTimeout,
-		Message: "generation timed out (60s limit)",
+	return &ErrorResponse{
+		Type:   strconv.Itoa(http.StatusInternalServerError),
+		Detail: "Gateway Timeout",
 	}
 }
 
