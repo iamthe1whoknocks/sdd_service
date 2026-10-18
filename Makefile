@@ -5,7 +5,7 @@ COMPOSE ?= docker compose
 # MIGRATE_URL передаётся в контейнер migrate через переменную DATABASE_URL,
 # которую сервис migrate получает из compose (см. docker-compose.yml).
 
-.PHONY: up down build logs ps status reset migrate-up migrate-down ollama-models run test test-features godog
+.PHONY: up down build logs ps status reset migrate-up migrate-down ollama-models run test test-api
 
 ## up — собрать и запустить весь стек в фоне
 up:
@@ -50,10 +50,10 @@ ollama-models:
 run:
 	go run ./cmd/server/
 
-## test — запустить godog контрактные тесты
+## test — unit-тесты (быстрые, без внешних сервисов)
 test:
-	go test -v ./tests/ -args --format=pretty
+	go test -v ./...
 
-## test-features — запустить godog с параметрами из features/
-test-features:
-	go run ./tests/ --format=pretty --paths=features/
+## test-api — интеграционные тесты против запущенного стека: сначала make up
+test-api:
+	go test -tags integration -v ./tests/ -count=1

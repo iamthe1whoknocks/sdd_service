@@ -1,8 +1,8 @@
 # VulnRAG — спецификация (Spec-Driven Development)
 
-> Статус: **утверждена** (v0.3.0)
+> Статус: **утверждена** (v0.5.0)
 > Формат: единый источник истины (single source of truth) для генерации кода и контрактных тестов.
-> Сопутствующие артефакты: `api/openapi.yaml`, `features/*.feature`, SQL-миграция (см. разделы 5–7), SPA в `web/` (см. раздел 8).
+> Сопутствующие артефакты: `api/openapi.yaml`, Go-тесты (см. раздел 6), SQL-миграция (см. разделы 5–7), SPA в `web/` (см. раздел 8).
 
 ---
 
@@ -177,57 +177,24 @@ components:
 
 > Примечание по CORS: SPA обращается к API через тот же origin — в dev через прокси Vite (`/api` → `localhost:8080`), в prod через nginx (`/api` → `app:8080`). Отдельная настройка CORS не требуется; при раздаче SPA с другого origin API должен разрешать CORS для origin приложения.
 
-## 6. Поведение — Gherkin (BDD)
+## 6. Поведение — контрактные тесты
 
-Файлы: [`features/ask.feature`](../features/ask.feature), [`features/documents.feature`](../features/documents.feature) (вынесены отдельно на этапе генерации кода). Исполняются через `godog`.
+Поведение API проверяется обычными Go-тестами (godog/Gherkin-обвязка удалена как избыточная для этого проекта):
 
-### features/ask.feature
+- **Unit-тесты хендлеров** — [`internal/handler/handler_test.go`](../internal/handler/handler_test.go): «чёрный ящик» через `httptest` + фейковый RAG-движок. Не требуют внешних сервисов: все валидации (400/422/413) и таймаут (504) проверяются мгновенно.
+- **Интеграционные тесты** — [`tests/api_test.go`](../tests/api_test.go): ходят в живой API на :8080 (запуск: `make test-api`, тэг `integration`).
+- **Чистая логика** — [`internal/rag/chunker_test.go`](../internal/rag/chunker_test.go), [`internal/repository/embedding_test.go`](../internal/repository/embedding_test.go).
 
-```gherkin
-@ask @regression
-Feature: Вопрос-ответ по уязвимостям
+Сценарии (эквивалент бывших `features/*.feature`):
 
-  Scenario: Успешный ответ с источниками
-    Given в хранилище загружен документ про CVE-2021-44228
-    When я отправляю POST /api/v1/ask с вопросом "что такое Log4Shell?"
-    Then ответ имеет статус 200
-    And в answer есть текст о Log4Shell
-    And sources содержит от 1 до 5 источников
-    And каждый источник имеет title и snippet
-
-  Scenario: Пустой вопрос отклоняется
-    When я отправляю POST /api/v1/ask с пустым question
-    Then ответ имеет статус 422
-    And в теле ошибки есть detail
-
-  Scenario: Таймаут генерации
-    Given Ollama отвечает дольше 60 секунд
-    When я отправляю POST /api/v1/ask с любым вопросом
-    Then ответ имеет статус 504
-```
-
-### features/documents.feature
-
-```gherkin
-@documents @regression
-Feature: Загрузка документов в RAG-хранилище
-
-  Scenario: Успешная синхронная индексация
-    When я отправляю POST /api/v1/documents
-      с title "CVE-2021-44228" и content "Log4Shell описание..."
-    Then ответ имеет статус 200
-    And document_id является UUID
-    And indexed равен true
-    And документ доступен для поиска через /ask
-
-  Scenario: Слишком большой документ
-    When я отправляю POST /api/v1/documents с content размером 2 МБ
-    Then ответ имеет статус 413
-
-  Scenario: Пустой title отклоняется
-    When я отправляю POST /api/v1/documents с пустым title
-    Then ответ имеет статус 422
-```
+| Сценарий | Запрос | Ожидание |
+|---|---|---|
+| Успешный ответ с источниками | POST /api/v1/ask «что такое Log4Shell?» (после загрузки документа) | 200, `answer` упоминает Log4Shell, 1–5 источников с `title` и `snippet` |
+| Пустой вопрос отклоняется | POST /api/v1/ask с `{"question":""}` | 422, в ошибке есть `detail` |
+| Таймаут генерации | RAG-движок отвечает дольше 60 c | 504 |
+| Успешная синхронная индексация | POST /api/v1/documents с валидными `title`/`content` | 200, `document_id` — UUID, `indexed=true` |
+| Слишком большой документ | POST /api/v1/documents с `content` > 1 МБ | 413 |
+| Пустой title отклоняется | POST /api/v1/documents с `{"title":""}` | 422 |
 
 ## 7. Модель данных — SQL
 
@@ -314,7 +281,7 @@ CREATE INDEX ON embeddings USING hnsw (embedding vector_cosine_ops);
 - Логирование: **Uber Go Zap** с `CapitalColorLevelEncoder` (цветные уровни в console-encoder). Минимальный уровень контролируется переменной `LOG_LEVEL` (по умолчанию `info`).
 - Обязательные middleware: Logger, Recover, RequestID, Timeout (60s для `/ask`).
 - Генерация каркаса сервера: `oapi-codegen -generate echo-server` по `api/openapi.yaml`.
-- Контрактные тесты: `godog` по `features/*.feature`.
+- Контрактные тесты: unit-тесты хендлеров (`httptest` + фейковый движок) и интеграционные против живой API (`make test-api`).
 
 ## 10. Вне скоупа MVP
 
@@ -345,3 +312,4 @@ CREATE INDEX ON embeddings USING hnsw (embedding vector_cosine_ops);
 | 0.2.0 | 2026-10-05 | Добавлен веб-интерфейс: SPA (Vite + React + TS) с двумя опциями — запрос и сохранение документа; обновлены FR/NFR, диаграмма, границы скоупа и TODO |
 | 0.3.0 | 2026-10-09 | Зафиксирована маршрутизация — Echo v4; добавлены обязательные middleware |
 | 0.4.0 | 2026-10-11 | Зафиксировано логирование — Uber Go Zap с цветными уровнями в console-encoder |
+| 0.5.0 | 2026-10-16 | Тесты переписаны без godog/Gherkin: контрактные сценарии оформлены как обычные Go-тесты (unit-тесты хендлеров через `httptest` + фейковый RAG-движок, интеграционные — `make test-api`); обновлён раздел 6 |

@@ -2,7 +2,7 @@
 .env
 
 # Артефакты сборки Go
-server
+
 *.test
 *.out
 

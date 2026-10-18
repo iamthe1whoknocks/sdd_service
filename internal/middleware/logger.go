@@ -6,6 +6,8 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
+
+	"vulnrag/internal/httperr"
 )
 
 // zapAdapter реализует интерфейс echo.Logger, делегируя вызовы zap.
@@ -71,10 +73,7 @@ func Recover(logger *zap.Logger) echo.MiddlewareFunc {
 						err = echo.NewHTTPError(http.StatusInternalServerError, r)
 					}
 					logger.Error("PANIC recovered", zap.Any("error", err))
-					_ = c.JSON(http.StatusInternalServerError, map[string]string{
-						"type":   "500",
-						"detail": "internal server_error",
-					})
+					_ = httperr.Write(c, http.StatusInternalServerError, "internal_error", "internal server error")
 				}
 			}()
 			return next(c)

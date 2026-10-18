@@ -1,12 +1,4 @@
+// Package middleware. Собственный формат ошибок больше не определяется здесь:
+// единый контрактный формат {error: {type, detail}} вынесен в internal/httperr
+// (см. api/openapi.yaml, схема Error).
 package middleware
-
-import "fmt"
-
-type ErrorResponse struct {
-	Detail string `json:"detail,omitempty"`
-	Type   string `json:"type,omitempty"`
-}
-
-func (e *ErrorResponse) Error() string {
-	return fmt.Sprintf("code:%d, message %s", e.Type, e.Detail)
-}

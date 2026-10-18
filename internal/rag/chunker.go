@@ -46,6 +46,7 @@ func (c *Chunker) Chunk(content string) []string {
 	}
 
 	var chunks []string
+	var pending string // accumulate tiny chunks to merge with neighbors
 
 	// Boundary-driven stride: each next chunk starts Overlap characters
 	// before the end of the current one.
@@ -59,12 +60,37 @@ func (c *Chunker) Chunk(content string) []string {
 		chunkEnd := findWordBoundary(runes, start, end)
 		chunk := string(runes[start:chunkEnd])
 
-		// Skip tiny chunks.
-		if utf8.RuneCountInString(chunk) >= MinChunkSize {
-			chunks = append(chunks, chunk)
+		runeCount := utf8.RuneCountInString(chunk)
+
+		// Merge tiny chunks with pending or the next large chunk.
+		if runeCount < MinChunkSize {
+			pending += chunk
+
+			if chunkEnd >= total {
+				// End of document: append pending to the last chunk.
+				if len(chunks) > 0 {
+					chunks[len(chunks)-1] += pending
+				}
+				break
+			}
+
+			// Overlap the tail, but always move forward to avoid infinite loop.
+			nextStart := chunkEnd - c.Overlap
+			if nextStart <= start {
+				nextStart = chunkEnd
+			}
+			start = nextStart
+			continue
 		}
 
-		// The end of the document is already covered by this chunk.
+		// Attach any pending tiny chunks to this large chunk.
+		if pending != "" {
+			chunk = pending + chunk
+			pending = ""
+		}
+
+		chunks = append(chunks, chunk)
+
 		if chunkEnd >= total {
 			break
 		}
@@ -77,6 +103,11 @@ func (c *Chunker) Chunk(content string) []string {
 			nextStart = chunkEnd
 		}
 		start = nextStart
+	}
+
+	// Flush any remaining pending chunks to the last large chunk.
+	if pending != "" && len(chunks) > 0 {
+		chunks[len(chunks)-1] += pending
 	}
 
 	return chunks

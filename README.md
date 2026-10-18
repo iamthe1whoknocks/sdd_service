@@ -35,6 +35,8 @@ make migrate-up           # применить миграции вручную
 make migrate-down         # откатить последнюю миграцию
 make ollama-models        # список моделей в ollama
 make reset                # down -v: удалить тома (БД + модели!)
+make test                 # unit-тесты (быстрые, без внешних сервисов)
+make test-api             # интеграционные тесты против запущенного стека
 ```
 
 ## Первый запуск (важно)
@@ -52,7 +54,9 @@ make reset                # down -v: удалить тома (БД + модел�
   (`make migrate-up`) или отдельным postgres-инстансом.
 - **SPA**: `cd web && npm install && npm run dev` — Vite на :5173, прокси
   `/api` и `/health` на `localhost:8080` (см. [`web/vite.config.ts`](web/vite.config.ts)).
-- **Godog-тесты** (`features/*.feature`) — следующий этап, будут ходить в API напрямую на :8080.
+- **Тесты**: `make test` — unit-тесты (хендлеры через `httptest` + фейковый движок,
+  валидации, чанкинг); `make test-api` — интеграционные тесты против запущенного
+  стека на :8080 (`go test -tags integration ./tests/`).
 
 ## Структура
 
@@ -60,6 +64,6 @@ make reset                # down -v: удалить тома (БД + модел�
 api/                  OpenAPI-контракт (источник истины)
 cmd/server/           точка входа Go API
 docker/ollama/        entrypoint предзагрузки моделей
-features/             BDD-сценарии (godog)
+tests/                интеграционные тесты против живой API (make test-api)
 migrations/           SQL-миграции (golang-migrate формат)
 web/                  SPA (Vite + React + TS)
