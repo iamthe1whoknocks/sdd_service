@@ -3,6 +3,7 @@ package vulnlist
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,7 +15,7 @@ import (
 
 const (
 	vulnlistURL   = "https://bdu.fstec.ru/files/documents/vullist.xlsx"
-	defaultSheet  = "Лист1"
+	defaultSheet  = "Уязвимости"
 	timeout       = 120 // seconds for download
 )
 
@@ -31,7 +32,14 @@ func Download(ctx context.Context) ([]byte, error) {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
-	client := &http.Client{Timeout: timeout * time.Second}
+	client := &http.Client{
+		Timeout: timeout * time.Second,
+		Transport:&http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("download: %w", err)

@@ -3,7 +3,7 @@
 # Stage 1: сборка статического бинаря (CGO выключен).
 # Stage 2: минимальный runtime на базе alpine + curl для healthcheck.
 
-FROM golang:1.23-alpine AS builder
+FROM golang:latest AS builder
 
 WORKDIR /src
 
