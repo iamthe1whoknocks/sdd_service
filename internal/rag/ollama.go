@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"time"
 )
 
 // OllamaClient provides methods to interact with Ollama API.
@@ -20,14 +19,14 @@ type OllamaClient struct {
 }
 
 // NewOllamaClient creates a new Ollama client from environment variables.
+// The client has no fixed HTTP timeout: each request derives its deadline
+// from the caller's context (with a per-call safety cap, see requestTimeout).
 func NewOllamaClient() *OllamaClient {
 	return &OllamaClient{
 		BaseURL:    getEnvDefault("OLLAMA_HOST", "http://localhost:11434"),
 		EmbedModel: getEnvDefault("EMBED_MODEL", "paraphrase-multilingual"),
 		LLMModel:   getEnvDefault("LLM_MODEL", "qwen2.5:3b"),
-		client: &http.Client{
-			Timeout: 65 * time.Second, // Slightly more than 60s timeout for ask
-		},
+		client:     &http.Client{},
 	}
 }
 

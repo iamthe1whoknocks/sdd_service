@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
@@ -41,4 +42,28 @@ func TestRecoverErrorShape(t *testing.T) {
 	e.ServeHTTP(rec, req)
 
 	assertErrorShape(t, rec.Code, rec.Body.String(), http.StatusInternalServerError)
+}
+
+// TestTimeoutPropagatesDeadline verifies that the Timeout middleware puts a
+// deadline on the request context so that downstream code can observe it via
+// ctx.Deadline() and errors.Is(ctx.Err(), context.DeadlineExceeded) (docs/FIXES.md #4).
+func TestTimeoutPropagatesDeadline(t *testing.T) {
+	e := echo.New()
+
+	var hasDeadline bool
+	e.GET("/deadline", func(c echo.Context) error {
+		_, hasDeadline = c.Request().Context().Deadline()
+		return nil
+	}, Timeout(50*time.Millisecond))
+
+	req := httptest.NewRequest(http.MethodGet, "/deadline", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !hasDeadline {
+		t.Error("context has no deadline set by Timeout middleware")
+	}
 }

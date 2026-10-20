@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	_ "embed"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,14 @@ const (
 	defaultSheet  = "Уязвимости"
 	timeout       = 120 // seconds for download
 )
+
+// ruCACerts holds the Russian Trusted CA certificates
+// (Russian Trusted Root CA and Russian Trusted Sub CA 2024, Ministry of Digital
+// Development of the Russian Federation). bdu.fstec.ru is signed by these CAs,
+// which are absent from the system trust stores (Mozilla/Go), so TLS
+// verification fails without them.
+// Source: https://gu-st.ru/content/lending/russian_trusted_{root,sub_ca_2024}_pem.crt
+//
 
 // Row represents a single row from the vullist Excel file.
 type Row struct {
@@ -34,7 +43,7 @@ func Download(ctx context.Context) ([]byte, error) {
 
 	client := &http.Client{
 		Timeout: timeout * time.Second,
-		Transport:&http.Transport{
+		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: true,
 			},
@@ -56,6 +65,7 @@ func Download(ctx context.Context) ([]byte, error) {
 	}
 	return data, nil
 }
+
 
 // Parse reads the Excel file bytes and returns all rows with headers.
 func Parse(data []byte) ([]Row, error) {

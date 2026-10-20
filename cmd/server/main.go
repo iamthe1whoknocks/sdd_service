@@ -22,6 +22,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"vulnrag/internal/handler"
+	"vulnrag/internal/httperr"
 	"vulnrag/internal/logger"
 	"vulnrag/internal/middleware"
 	"vulnrag/internal/rag"
@@ -75,25 +76,9 @@ func main() {
 	e.HideBanner = true
 	e.HidePort = true
 
-	// Set custom HTTP error handler
-	e.HTTPErrorHandler = func(err error, c echo.Context) {
-		if he, ok := err.(*echo.HTTPError); ok {
-			resp := map[string]interface{}{
-				"error": map[string]interface{}{
-					"type":   he.Message,
-					"detail": he.Error(),
-				},
-			}
-			c.JSON(he.Code, resp)
-		} else {
-			c.JSON(http.StatusInternalServerError, map[string]interface{}{
-				"error": map[string]string{
-					"type":   "internal_error",
-					"detail": err.Error(),
-				},
-			})
-		}
-	}
+	// Set custom HTTP error handler: the full error goes to the log only,
+	// the client gets a generic message (docs/FIXES.md #2).
+	e.HTTPErrorHandler = newErrorHandler(zapLogger)
 
 	// Register global middleware
 	e.Use(middleware.Logger(zapLogger))
@@ -105,21 +90,27 @@ func main() {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
 
-	// Ask endpoint with timeout middleware
-	askHandler := &handler.AskHandler{Engine: engine}
-	e.POST("/api/v1/ask", askHandler.PostApiV1Ask)
+	// Ask endpoint: enforce the 60s generation deadline from the spec
+	// (docs/spec.md §4/§9, docs/FIXES.md #4). middleware.Timeout puts the
+	// deadline on the request context; the handler maps
+	// context.DeadlineExceeded to 504 via errors.Is.
+	askHandler := handler.NewAskHandler(engine, zapLogger)
+	e.POST("/api/v1/ask", askHandler.PostApiV1Ask, middleware.Timeout(60*time.Second))
 
 	// Documents endpoint
-	docHandler := &handler.DocumentsHandler{Engine: engine}
+	docHandler := handler.NewDocumentsHandler(engine, zapLogger)
 	e.POST("/api/v1/documents", docHandler.PostApiV1Documents)
 
-	// Start server
+	// Start server. WriteTimeout is aligned with the 60s /ask deadline plus a
+	// small margin for writing the 504 response, so the deadline handled by
+	// middleware.Timeout always fires before the connection is cut
+	// (docs/FIXES.md #4).
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           e,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      90 * time.Second,
+		WriteTimeout:      65 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
@@ -202,4 +193,51 @@ func getEnvDefault(key, def string) string {
 		return val
 	}
 	return def
+}
+
+// newErrorHandler returns the Echo HTTP error handler that logs the full
+// error and replies with only generic details (docs/FIXES.md #2).
+func newErrorHandler(log *zap.Logger) echo.HTTPErrorHandler {
+	return func(err error, c echo.Context) {
+		logErr := func(lvl zapcore.Level, msg string, status int) {
+			if ce := log.Check(lvl, msg); ce != nil {
+				ce.Write(
+					zap.String("request_id", requestIDFrom(c)),
+					zap.String("method", c.Request().Method),
+					zap.String("path", c.Request().URL.Path),
+					zap.Int("status", status),
+					zap.Error(err),
+				)
+			}
+		}
+
+		he, ok := err.(*echo.HTTPError)
+		if !ok {
+			logErr(zapcore.ErrorLevel, "unhandled handler error", http.StatusInternalServerError)
+			_ = httperr.Write(c, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+
+		if he.Code >= http.StatusInternalServerError {
+			logErr(zapcore.ErrorLevel, "handler error", he.Code)
+			_ = httperr.Write(c, he.Code, "internal_error", "internal server error")
+			return
+		}
+
+		// 4xx: the message is safe to expose (e.g. echo.ErrNotFound -> "Not Found").
+		logErr(zapcore.InfoLevel, "request rejected", he.Code)
+		detail := http.StatusText(he.Code)
+		if msg, ok := he.Message.(string); ok && msg != "" {
+			detail = msg
+		}
+		_ = httperr.Write(c, he.Code, "http_error", detail)
+	}
+}
+
+// requestIDFrom returns the request ID set by the RequestID middleware.
+func requestIDFrom(c echo.Context) string {
+	if v, ok := c.Get("requestID").(string); ok {
+		return v
+	}
+	return ""
 }

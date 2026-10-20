@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -9,17 +11,30 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	openapi_types "github.com/oapi-codegen/runtime/types"
+	"go.uber.org/zap"
 )
 
 // AskHandler handles POST /api/v1/ask requests.
 type AskHandler struct {
 	Engine Asker
+	Logger *zap.Logger
+}
+
+// NewAskHandler creates the POST /api/v1/ask handler.
+// The logger is created in cmd/server/main.go and passed here so that every
+// handler error is logged with full details (see docs/FIXES.md #2).
+func NewAskHandler(engine Asker, logger *zap.Logger) *AskHandler {
+	return &AskHandler{Engine: engine, Logger: logger}
 }
 
 // PostApiV1Ask implements the ask endpoint.
 func (h *AskHandler) PostApiV1Ask(c echo.Context) error {
 	var req AskRequest
 	if err := c.Bind(&req); err != nil {
+		h.Logger.Warn("ask: malformed request body",
+			zap.String("request_id", requestID(c)),
+			zap.Error(err),
+		)
 		return respondError(c, http.StatusBadRequest, "invalid_request", "malformed JSON request body")
 	}
 
@@ -32,13 +47,23 @@ func (h *AskHandler) PostApiV1Ask(c echo.Context) error {
 		return respondError(c, http.StatusUnprocessableEntity, "validation_error", "question exceeds 4000 characters")
 	}
 
-	// Call RAG engine
+	// Call RAG engine under the 60s deadline set by middleware.Timeout
+	// (cmd/server/main.go). A deadline is detected through the error chain
+	// with errors.Is, never by string matching (docs/FIXES.md #4).
 	answer, sources, err := h.Engine.Ask(c.Request().Context(), question)
 	if err != nil {
-		if strings.Contains(err.Error(), "context deadline exceeded") {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.Logger.Warn("ask: generation timed out",
+				zap.String("request_id", requestID(c)),
+				zap.Error(err),
+			)
 			return respondError(c, http.StatusGatewayTimeout, "timeout", "generation timed out after 60 seconds")
 		}
-		return respondError(c, http.StatusInternalServerError, "internal_error", err.Error())
+		h.Logger.Error("ask: engine failed",
+			zap.String("request_id", requestID(c)),
+			zap.Error(err),
+		)
+		return respondError(c, http.StatusInternalServerError, "internal_error", "internal server error")
 	}
 
 	// Build response sources
@@ -62,12 +87,24 @@ func (h *AskHandler) PostApiV1Ask(c echo.Context) error {
 // DocumentsHandler handles POST /api/v1/documents requests.
 type DocumentsHandler struct {
 	Engine Indexer
+	Logger *zap.Logger
+}
+
+// NewDocumentsHandler creates the POST /api/v1/documents handler.
+// The logger is created in cmd/server/main.go and passed here so that every
+// handler error is logged with full details (see docs/FIXES.md #2).
+func NewDocumentsHandler(engine Indexer, logger *zap.Logger) *DocumentsHandler {
+	return &DocumentsHandler{Engine: engine, Logger: logger}
 }
 
 // PostApiV1Documents implements the documents endpoint.
 func (h *DocumentsHandler) PostApiV1Documents(c echo.Context) error {
 	var req DocumentRequest
 	if err := c.Bind(&req); err != nil {
+		h.Logger.Warn("documents: malformed request body",
+			zap.String("request_id", requestID(c)),
+			zap.Error(err),
+		)
 		return respondError(c, http.StatusBadRequest, "invalid_request", "malformed JSON request body")
 	}
 
@@ -91,12 +128,24 @@ func (h *DocumentsHandler) PostApiV1Documents(c echo.Context) error {
 	// Index the document
 	docID, err := h.Engine.IndexDocument(c.Request().Context(), req.Title, req.Content)
 	if err != nil {
-		return respondError(c, http.StatusUnprocessableEntity, "internal_error", err.Error())
+		h.Logger.Error("documents: indexing failed",
+			zap.String("request_id", requestID(c)),
+			zap.String("title", title),
+			zap.Error(err),
+		)
+		// An indexing failure is an internal server error (Ollama/DB down),
+		// not a client validation problem (docs/FIXES.md #3).
+		return respondError(c, http.StatusInternalServerError, "internal_error", "document indexing failed")
 	}
 
 	// Parse docID as UUID
 	docUUID, err := uuid.Parse(docID)
 	if err != nil {
+		h.Logger.Error("documents: engine returned invalid document ID",
+			zap.String("request_id", requestID(c)),
+			zap.String("document_id", docID),
+			zap.Error(err),
+		)
 		return respondError(c, http.StatusInternalServerError, "internal_error", "invalid document ID")
 	}
 
