@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	echoMiddleware "github.com/labstack/echo/v4/middleware"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -84,6 +85,11 @@ func main() {
 	e.Use(middleware.Logger(zapLogger))
 	e.Use(middleware.Recover(zapLogger))
 	e.Use(middleware.RequestID())
+
+	// Limit request body size to protect against DoS (docs/spec.md §4,
+	// docs/FIXES.md #5).  The largest allowed payload is a 1 MB document
+	// content wrapped in JSON, so ~1 MB + 64 KB overhead is sufficient.
+	e.Use(echoMiddleware.BodyLimit("1MB+64KB"))
 
 	// Health endpoint
 	e.GET("/health", func(c echo.Context) error {

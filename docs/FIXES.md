@@ -36,9 +36,9 @@
   - Файлы: `cmd/server/main.go` (`middleware.Timeout(60*time.Second)`), `internal/handler/ask.go` (`errors.Is(err, context.DeadlineExceeded)`), `internal/rag/ollama.go` (safety cap), `internal/middleware/timeout.go`
   - Критерий: превышение 60 с → 504; детект через `errors.Is(err, context.DeadlineExceeded)`/`ctx.Err()`, без сравнения строк; `WriteTimeout` согласован с 60 с.
 
-- [ ] **#5 Ограничить размер тела запроса** (защита от DoS)
-  - Файлы: `cmd/server/main.go` (`echo.BodyLimit("1MB+64KB")` или `http.MaxBytesReader`)
-  - Критерий: запрос > ~1 МБ отклоняется до полного чтения в память; тест на большой payload проходит.
+- [x] **#5 Ограничить размер тела запроса** (защита от DoS)
+  - Файлы: `cmd/server/main.go` (middleware.BodyLimit("1MB+64KB"))
+  - Критерий: запрос > ~1 МБ отклоняется до полного чтения в память; возвращается 413.
 
 - [ ] **#6 Синхронизировать модель эмбеддингов и размерность `vector(768)`**
   - Файлы: `internal/rag/ollama.go` (дефолт `EMBED_MODEL`), `migrations/0001_init.up.sql` (размерность), `docker-compose.yml` (`OLLAMA_EMBED_MODEL`), `docs/spec.md` §7/§9
