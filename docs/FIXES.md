@@ -44,15 +44,16 @@
   - Файлы: `internal/rag/ollama.go` (дефолт `EMBED_MODEL`), `migrations/0001_init.up.sql` (размерность), `docker-compose.yml` (`OLLAMA_EMBED_MODEL`), `docs/spec.md` §7/§9
   - Критерий: дефолтная модель отдаёт 768 измерений (или размерность в БД приведена к модели); на старте проверяется доступность модели и совпадение размерности.
 
-- [ ] **#7 Идемпотентная/фоновая индексация vullist**
-  - Файлы: `cmd/server/main.go` (`initVulnlist`), `internal/vulnlist/vulnlist.go`
-  - Критерий: повторный старт не создаёт дубликаты документов; индексация не блокирует `ListenAndServe`; есть таймаут контекста.
+- [x] **#7 Идемпотентная/фоновая индексация vulnist**
+  - Файлы: `cmd/server/main.go` (`initVulnlist`), `internal/vulnlist/vulnlist.go`, `internal/repository/document.go` (`UpsertDocumentWithChunks`), `internal/rag/engine.go`, `migrations/0002_unique_document_title`
+  - Критерий: повторный старт не создаёт дубликаты документов (уникальный индекс на `documents.title`, `UpsertDocumentWithChunks`); индексация не блокирует `ListenAndServe` (фоновая горутина); есть таймаут контекста (5 мин).
 
 ## 🟠 Существенно
 
-- [ ] **#8 Валидация длин по символам (рунам), а не по байтам**
+- [x] **#8 Валидация длин по символам (рунам), а не по байтам**
   - Файлы: `internal/handler/ask.go`, `internal/repository/embedding.go` (`len()` → `utf8.RuneCountInString`), `web/src/App.tsx` (единое правило счёта)
   - Критерий: кириллический вопрос из 2000 символов проходит; клиент и сервер дают одинаковый вердикт.
+  - Решение: `question`/`title` — по рунам (UTF-8 code points); `content` — по байтам (совпадает с `octet_length` в SQL и `BodyLimit` в Echo). `api/openapi.yaml`: `maxLength` для `content` убран (байтовый лимит выражается через 413).
 
 - [ ] **#9 Защита от prompt injection + порог релевантности источников**
   - Файлы: `internal/rag/engine.go` (пометка контекста как ненадёжного, разделители), `internal/repository/document.go` (`SearchSimilar` — порог `Score`)

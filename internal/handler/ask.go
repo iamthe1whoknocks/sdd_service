@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"vulnrag/internal/repository"
 
@@ -38,12 +39,12 @@ func (h *AskHandler) PostApiV1Ask(c echo.Context) error {
 		return respondError(c, http.StatusBadRequest, "invalid_request", "malformed JSON request body")
 	}
 
-	// Validate question
+	// Validate question (length in runes, not bytes — docs/FIXES.md #8)
 	question := strings.TrimSpace(req.Question)
-	if len(question) == 0 {
+	if utf8.RuneCountInString(question) == 0 {
 		return respondError(c, http.StatusUnprocessableEntity, "validation_error", "question is required")
 	}
-	if len(question) > 4000 {
+	if utf8.RuneCountInString(question) > 4000 {
 		return respondError(c, http.StatusUnprocessableEntity, "validation_error", "question exceeds 4000 characters")
 	}
 

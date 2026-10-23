@@ -123,7 +123,8 @@ components:
         content:
           type: string
           minLength: 1
-          maxLength: 1048576
+          # Byte limit enforced by echo middleware (BodyLimit) and ValidateContentSize.
+          # Server returns 413 if body exceeds ~1 MB + overhead (not a schema constraint).
     DocumentResponse:
       type: object
       required:

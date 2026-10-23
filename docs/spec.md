@@ -157,7 +157,8 @@ components:
         content:
           type: string
           minLength: 1
-          maxLength: 1048576   # 1 МБ
+          # Byte limit (~1 MB) enforced by echo BodyLimit and ValidateContentSize.
+          # Server returns 413 when the request body exceeds the limit.
     DocumentResponse:
       type: object
       required: [document_id, indexed]
@@ -205,7 +206,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE documents (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title      TEXT NOT NULL,
+    title      TEXT NOT NULL UNIQUE,
     content    TEXT NOT NULL CHECK (octet_length(content) <= 1048576),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

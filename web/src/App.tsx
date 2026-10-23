@@ -1,9 +1,13 @@
 import { FormEvent, useState } from 'react'
 
-// Доменные правила из docs/spec.md §4 дублируются клиентской валидацией (FE-4)
+// Доменные правила из docs/spec.md §4 дублируются клиентской валидацией (FE-4).
+// charLen counts Unicode code points (matches Go utf8.RuneCountInString, docs/FIXES.md #8).
+const charLen = (s: string) => Array.from(s).length
+const byteLen = (s: string) => new TextEncoder().encode(s).length
+
 const MAX_QUESTION = 4000
 const MAX_TITLE = 500
-const MAX_CONTENT = 1048576 // 1 МБ
+const MAX_CONTENT = 1048576 // 1 МБ (bytes)
 
 type Source = { title: string; url?: string | null; snippet: string }
 type AskResponse = { answer: string; sources: Source[] }
@@ -31,9 +35,9 @@ function AskTab() {
   const [response, setResponse] = useState<AskResponse | null>(null)
 
   const clientError =
-    question.trim().length === 0
+    charLen(question.trim()) === 0
       ? 'Вопрос обязателен'
-      : question.length > MAX_QUESTION
+      : charLen(question) > MAX_QUESTION
         ? `Вопрос не длиннее ${MAX_QUESTION} символов`
         : null
 
@@ -62,7 +66,7 @@ function AskTab() {
           maxLength={MAX_QUESTION}
         />
         <div className="counter">
-          {question.length}/{MAX_QUESTION}
+          {charLen(question)}/{MAX_QUESTION}
         </div>
         <button className="primary" type="submit" disabled={state.status === 'loading' || !!clientError}>
           {state.status === 'loading' ? 'Генерация…' : 'Запросить'}
@@ -107,13 +111,13 @@ function DocumentsTab() {
   const [state, setState] = useState<LoadState>({ status: 'idle' })
   const [result, setResult] = useState<DocumentResponse | null>(null)
 
-  const contentBytes = new TextEncoder().encode(content).length
+  const contentBytes = byteLen(content)
   const clientError =
-    title.trim().length === 0
+    charLen(title.trim()) === 0
       ? 'Title обязателен'
-      : title.length > MAX_TITLE
+      : charLen(title) > MAX_TITLE
         ? `Title не длиннее ${MAX_TITLE} символов`
-        : content.trim().length === 0
+        : charLen(content.trim()) === 0
           ? 'Content обязателен'
           : contentBytes > MAX_CONTENT
             ? `Content не больше 1 МБ (сейчас ${(contentBytes / 1048576).toFixed(2)} МБ)`
@@ -147,7 +151,7 @@ function DocumentsTab() {
           maxLength={MAX_TITLE}
         />
         <div className="counter">
-          {title.length}/{MAX_TITLE}
+          {charLen(title)}/{MAX_TITLE}
         </div>
 
         <label htmlFor="content">Content</label>

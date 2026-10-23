@@ -40,3 +40,44 @@ func TestValidateQuestion(t *testing.T) {
 		t.Error("question длиннее 4000 символов должен быть ошибкой")
 	}
 }
+
+// TestValidateLengthsInRunes verifies that title and question limits are
+// measured in Unicode runes (not bytes), per docs/FIXES.md #8.
+func TestValidateLengthsInRunes(t *testing.T) {
+	// 500 Cyrillic chars = 1000 bytes — must be valid (exactly at the rune limit).
+	title500 := strings.Repeat("т", 500)
+	if err := ValidateTitle(title500); err != nil {
+		t.Errorf("title из 500 кириллических символов (1000 байт) должен быть валиден: %v", err)
+	}
+
+	// 501 Cyrillic chars = 1002 bytes — must be rejected (exceeds rune limit).
+	title501 := strings.Repeat("т", 501)
+	if err := ValidateTitle(title501); err == nil {
+		t.Error("title из 501 кириллического символа должен быть отклонён")
+	}
+
+	// 4000 Cyrillic chars = 8000 bytes — must be valid (exactly at the rune limit).
+	q4000 := strings.Repeat("а", 4000)
+	if err := ValidateQuestion(q4000); err != nil {
+		t.Errorf("question из 4000 кириллических символов (8000 байт) должен быть валиден: %v", err)
+	}
+
+	// 4001 Cyrillic chars = 8002 bytes — must be rejected (exceeds rune limit).
+	q4001 := strings.Repeat("а", 4001)
+	if err := ValidateQuestion(q4001); err == nil {
+		t.Error("question из 4001 кириллического символа должен быть отклонён")
+	}
+
+	// Content: size limit is in BYTES (not runes).
+	// 1 048 576 bytes — must be valid (exactly at the byte limit).
+	content1MB := strings.Repeat("a", 1048576)
+	if err := ValidateContentSize(content1MB); err != nil {
+		t.Errorf("content из 1 048 576 байт должен быть валиден: %v", err)
+	}
+
+	// 1 048 577 bytes — must be rejected.
+	contentOver := strings.Repeat("a", 1048577)
+	if err := ValidateContentSize(contentOver); err == nil {
+		t.Error("content из 1 048 577 байт должен быть отклонён")
+	}
+}

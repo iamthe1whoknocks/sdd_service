@@ -88,6 +88,28 @@ func (e *Engine) IndexDocument(ctx context.Context, title, content string) (stri
 	return docID, nil
 }
 
+// UpsertDocumentWithChunks is like IndexDocument but idempotent: if a document
+// with the same title already exists, its chunks and embeddings are replaced.
+// Returns (docID, true) on insert and (docID, false) on update.
+func (e *Engine) UpsertDocumentWithChunks(ctx context.Context, title, content string) (string, bool, error) {
+	chunks := e.chunker.Chunk(content)
+
+	embeddings := make([][]float32, 0, len(chunks))
+	for _, chunk := range chunks {
+		emb, err := e.ollama.GenerateEmbedding(ctx, chunk)
+		if err != nil {
+			return "", false, fmt.Errorf("generate embedding for chunk: %w", err)
+		}
+		embeddings = append(embeddings, emb)
+	}
+
+	docID, created, err := e.repo.UpsertDocumentWithChunks(ctx, title, content, chunks, embeddings)
+	if err != nil {
+		return "", false, fmt.Errorf("upsert document: %w", err)
+	}
+	return docID, created, nil
+}
+
 
 
 func buildPromptTemplate() string {

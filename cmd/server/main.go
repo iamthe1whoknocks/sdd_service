@@ -74,11 +74,6 @@ func main() {
 		zapLogger.Fatal("embedding dimension mismatch", zap.Error(err))
 	}
 
-	// Download and index the official vullist on startup
-	if err := initVulnlist(context.Background(), engine, zapLogger); err != nil {
-		zapLogger.Warn("vullist indexing failed, service will continue without it", zap.Error(err))
-	}
-
 	// Create Echo router
 	e := echo.New()
 	e.HideBanner = true
@@ -130,6 +125,17 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Index vullist in the background so the server becomes ready immediately
+	// (docs/FIXES.md #7).  A per-start timeout prevents a slow Ollama from
+	// hanging the startup goroutine forever.
+	go func() {
+		initCtx, initCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer initCancel()
+		if err := initVulnlist(initCtx, engine, zapLogger); err != nil {
+			zapLogger.Warn("vullist indexing failed, service will continue without it", zap.Error(err))
+		}
+	}()
+
 	go func() {
 		zapLogger.Info("VulnRAG API listening", zap.String("port", port))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -169,7 +175,8 @@ func initVulnlist(ctx context.Context, engine *rag.Engine, logger *zap.Logger) e
 		return fmt.Errorf("vullist contains no data rows")
 	}
 
-	// Step 3: Index each row as a document
+	// Step 3: Upsert each row as a document (idempotent — no duplicates on
+	// repeated starts, docs/FIXES.md #7).
 	var indexed, skipped int
 	for i, row := range rows {
 		title := vulnlist.ToDocumentTitle(row)
@@ -180,13 +187,22 @@ func initVulnlist(ctx context.Context, engine *rag.Engine, logger *zap.Logger) e
 		}
 
 		content := vulnlist.ToDocumentContent(row)
-		if _, err := engine.IndexDocument(ctx, title, content); err != nil {
-			logger.Error("indexing row failed",
+		docID, created, err := engine.UpsertDocumentWithChunks(ctx, title, content)
+		if err != nil {
+			logger.Error("upserting row failed",
 				zap.Int("row", i+1),
 				zap.String("title", title),
 				zap.Error(err),
 			)
 			skipped++
+			continue
+		}
+		if !created {
+			logger.Debug("skipped (already indexed)",
+				zap.Int("row", i+1),
+				zap.String("title", title),
+				zap.String("doc_id", docID),
+			)
 			continue
 		}
 		indexed++

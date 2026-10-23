@@ -42,6 +42,24 @@ func (r *DB) CreateDocument(ctx context.Context, title, content string) (string,
 	return id, nil
 }
 
+// UpsertDocument inserts a document with the given title or updates it if a
+// document with the same title already exists.  Returns (docID, true) on
+// insert and (existingID, false) on update.  This enables idempotent vullist
+// indexing (docs/FIXES.md #7).
+func (r *DB) UpsertDocument(ctx context.Context, title, content string) (docID string, created bool, err error) {
+	err = r.pool.QueryRow(ctx,
+		`INSERT INTO documents (title, content) VALUES ($1, $2)
+		 ON CONFLICT (title) DO UPDATE SET content = EXCLUDED.content
+		 RETURNING id`,
+		title, content,
+	).Scan(&docID)
+	if err != nil {
+		return "", false, err
+	}
+	created = true
+	return docID, true, nil
+}
+
 
 
 
@@ -130,4 +148,90 @@ func (r *DB) CreateDocumentWithChunks(ctx context.Context, title, content string
 		return "", err
 	}
 	return docID, nil
+}
+
+// UpsertDocumentWithChunks atomically upserts a document and replaces its
+// chunks and embeddings.  If a document with the same title already exists,
+// old chunks/embeddings are deleted and new ones are inserted.
+// Returns (docID, true) on insert, (docID, false) on update.
+func (r *DB) UpsertDocumentWithChunks(ctx context.Context, title, content string, chunks []string, embeddings [][]float32) (string, bool, error) {
+	if len(chunks) != len(embeddings) {
+		return "", false, fmt.Errorf("chunks and embeddings length mismatch")
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	defer tx.Rollback(ctx) // no-op after successful Commit
+
+	// Check if a document with this title already exists.
+	var existingID string
+	if err := tx.QueryRow(ctx,
+		"SELECT id FROM documents WHERE title = $1", title,
+	).Scan(&existingID); err != nil && err != pgx.ErrNoRows {
+		return "", false, err
+	}
+
+	// Insert or update the document row.
+	var docID string
+	if existingID != "" {
+		if err := tx.QueryRow(ctx,
+			`UPDATE documents SET content = $2 WHERE title = $1 RETURNING id`,
+			title, content,
+		).Scan(&docID); err != nil {
+			return "", false, err
+		}
+	} else {
+		if err := tx.QueryRow(ctx,
+			"INSERT INTO documents (title, content) VALUES ($1, $2) RETURNING id",
+			title, content,
+		).Scan(&docID); err != nil {
+			return "", false, err
+		}
+	}
+
+	// Delete existing chunks (cascades to embeddings).
+	if _, err := tx.Exec(ctx,
+		"DELETE FROM chunks WHERE document_id = $1", docID,
+	); err != nil {
+		return "", false, err
+	}
+
+	// Insert chunks in a batch.
+	batch := &pgx.Batch{}
+	for i, ch := range chunks {
+		batch.Queue(
+			"INSERT INTO chunks (document_id, content, position) VALUES ($1, $2, $3) RETURNING id",
+			docID, ch, i,
+		)
+	}
+	br := tx.SendBatch(ctx, batch)
+	chunkIDs := make([]int64, 0, len(chunks))
+	for range chunks {
+		var id int64
+		if err := br.QueryRow().Scan(&id); err != nil {
+			br.Close()
+			return "", false, err
+		}
+		chunkIDs = append(chunkIDs, id)
+	}
+	if err := br.Close(); err != nil {
+		return "", false, err
+	}
+
+	// Insert embeddings.
+	for i, id := range chunkIDs {
+		if _, err := tx.Exec(ctx,
+			"INSERT INTO embeddings (chunk_id, embedding) VALUES ($1, $2)",
+			id, embeddings[i],
+		); err != nil {
+			return "", false, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", false, err
+	}
+	return docID, existingID == "", nil
 }
