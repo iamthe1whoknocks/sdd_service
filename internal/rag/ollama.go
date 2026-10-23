@@ -24,7 +24,7 @@ type OllamaClient struct {
 func NewOllamaClient() *OllamaClient {
 	return &OllamaClient{
 		BaseURL:    getEnvDefault("OLLAMA_HOST", "http://localhost:11434"),
-		EmbedModel: getEnvDefault("EMBED_MODEL", "paraphrase-multilingual"),
+		EmbedModel: getEnvDefault("EMBED_MODEL", "nomic-embed-text:latest"),
 		LLMModel:   getEnvDefault("LLM_MODEL", "qwen2.5:3b"),
 		client:     &http.Client{},
 	}

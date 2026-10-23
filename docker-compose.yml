@@ -80,7 +80,7 @@ services:
       PORT: "8080"
       DATABASE_URL: postgres://${POSTGRES_USER:-vulnrag}:${POSTGRES_PASSWORD:-vulnrag}@postgres:5432/${POSTGRES_DB:-vulnrag}?sslmode=disable
       OLLAMA_HOST: http://ollama:11434
-      EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-paraphrase-multilingual}
+      EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text:latest}
       LLM_MODEL: ${OLLAMA_LLM_MODEL:-qwen2.5:3b}
     depends_on:
       postgres:

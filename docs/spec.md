@@ -300,7 +300,7 @@ CREATE INDEX ON embeddings USING hnsw (embedding vector_cosine_ops);
 - [х] Выбор конкретной модели LLM в Ollama (`llama3.x` vs `qwen` vs др.).
 - [ ] Язык ответов (ru/en) — определяется промптом.
 - [ ] Формат сниппетов источников (первые N символов чанка).
-- [ ] Размерность вектора в `embeddings` (зависит от модели эмбеддингов).
+- [x] Размерность вектора в `embeddings` — зафиксирована 768 (`nomic-embed-text:latest`), проверка на старте.
 
 ---
 

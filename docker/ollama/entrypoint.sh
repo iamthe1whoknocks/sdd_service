@@ -2,7 +2,7 @@
 # Entrypoint контейнера ollama: предзагрузка моделей, затем постоянный сервер.
 #
 # Переменные окружения:
-#   OLLAMA_EMBED_MODEL - модель эмбеддингов (default: paraphrase-multilingual, dim=768)
+#   OLLAMA_EMBED_MODEL - embedding model (default: nomic-embed-text:latest, dim=768)
 #   OLLAMA_LLM_MODEL   - LLM для генерации ответов (default: qwen2.5:3b)
 #
 # Примечание: в образе ollama нет curl/wget, поэтому готовность сервера и

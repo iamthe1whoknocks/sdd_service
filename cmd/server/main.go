@@ -67,6 +67,13 @@ func main() {
 	repo := repository.New(pool)
 	engine := rag.NewEngine(repo, ollama)
 
+	// Verify that the embedding model dimension matches the database schema.
+	// This prevents silent failures when the configured model returns a
+	// different vector size than vector(768) in the migrations.
+	if err := verifyEmbeddingDimension(context.Background(), ollama, 768, zapLogger); err != nil {
+		zapLogger.Fatal("embedding dimension mismatch", zap.Error(err))
+	}
+
 	// Download and index the official vullist on startup
 	if err := initVulnlist(context.Background(), engine, zapLogger); err != nil {
 		zapLogger.Warn("vullist indexing failed, service will continue without it", zap.Error(err))
@@ -199,6 +206,32 @@ func getEnvDefault(key, def string) string {
 		return val
 	}
 	return def
+}
+
+// verifyEmbeddingDimension generates a test embedding and checks that its
+// length matches the expected dimension.  This ensures the configured Ollama
+// embedding model is compatible with the vector(N) column in the database
+// (docs/FIXES.md #6).
+func verifyEmbeddingDimension(ctx context.Context, ollama *rag.OllamaClient, expectedDim int, log *zap.Logger) error {
+	log.Info("verifying embedding model dimension", zap.String("model", ollama.EmbedModel), zap.Int("expected_dim", expectedDim))
+
+	// Use context with a short timeout so a hung Ollama call doesn't block startup.
+	checkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	emb, err := ollama.GenerateEmbedding(checkCtx, "dimension check probe")
+	if err != nil {
+		return fmt.Errorf("generate probe embedding: %w", err)
+	}
+
+	actualDim := len(emb)
+	if actualDim != expectedDim {
+		return fmt.Errorf("embedding dimension mismatch: model %q returned %d, expected %d — update vector(%d) in migrations or change EMBED_MODEL",
+			ollama.EmbedModel, actualDim, expectedDim, actualDim)
+	}
+
+	log.Info("embedding dimension verified", zap.Int("dimension", actualDim))
+	return nil
 }
 
 // newErrorHandler returns the Echo HTTP error handler that logs the full
