@@ -63,8 +63,14 @@ func (r *DB) UpsertDocument(ctx context.Context, title, content string) (docID s
 
 
 
-// SearchSimilar retrieves top-k similar chunks based on a query embedding.
-func (r *DB) SearchSimilar(ctx context.Context, queryEmbedding []float32, limit int) ([]SearchResult, error) {
+// SearchSimilar retrieves up to limit chunks whose cosine similarity to
+// queryEmbedding is at least minScore.
+//
+// A plain k-NN query always returns `limit` rows, even when the whole
+// knowledge base is irrelevant. Filtering by minScore keeps noise out of the
+// prompt (docs/FIXES.md #9). The filter runs after ordering so the scan stays
+// a plain index-backed k-NN query.
+func (r *DB) SearchSimilar(ctx context.Context, queryEmbedding []float32, limit int, minScore float64) ([]SearchResult, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT e.chunk_id, c.document_id, d.title, c.content, c.position,
 			1 - (e.embedding <=> $1::vector) AS score
@@ -85,6 +91,10 @@ func (r *DB) SearchSimilar(ctx context.Context, queryEmbedding []float32, limit 
 		var sr SearchResult
 		if err := rows.Scan(&sr.ChunkID, &sr.DocumentID, &sr.Title, &sr.Content, &sr.Position, &sr.Score); err != nil {
 			return nil, err
+		}
+		// score = 1 - cosine_distance; drop chunks below the floor.
+		if sr.Score < minScore {
+			continue
 		}
 		results = append(results, sr)
 	}

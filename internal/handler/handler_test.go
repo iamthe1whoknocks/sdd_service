@@ -185,6 +185,28 @@ func TestAskEngineError(t *testing.T) {
 	}
 }
 
+// TestAskNoRelevantData checks that a question with no chunks above the
+// relevance floor returns 200 with a fixed answer and an empty sources list
+// instead of 500 (docs/FIXES.md #9).
+func TestAskNoRelevantData(t *testing.T) {
+	e := newRouter(&fakeEngine{
+		askFn: func(_ context.Context, _ string) (string, []repository.SearchResult, error) {
+			return "Релевантных данных в базе знаний не найдено.", nil, nil
+		},
+	})
+	status, body := doJSON(t, e, "/api/v1/ask", `{"question":"рецепт блинов"}`)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%v)", status, body)
+	}
+	if body["answer"] != "Релевантных данных в базе знаний не найдено." {
+		t.Errorf("answer = %v, want 'нет релевантных данных'", body["answer"])
+	}
+	sources, ok := body["sources"].([]interface{})
+	if !ok || len(sources) != 0 {
+		t.Errorf("sources = %v, want empty list", body["sources"])
+	}
+}
+
 // --- POST /api/v1/documents ---
 
 func TestDocumentsSuccess(t *testing.T) {

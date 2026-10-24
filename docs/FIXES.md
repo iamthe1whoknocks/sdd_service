@@ -55,9 +55,10 @@
   - Критерий: кириллический вопрос из 2000 символов проходит; клиент и сервер дают одинаковый вердикт.
   - Решение: `question`/`title` — по рунам (UTF-8 code points); `content` — по байтам (совпадает с `octet_length` в SQL и `BodyLimit` в Echo). `api/openapi.yaml`: `maxLength` для `content` убран (байтовый лимит выражается через 413).
 
-- [ ] **#9 Защита от prompt injection + порог релевантности источников**
-  - Файлы: `internal/rag/engine.go` (пометка контекста как ненадёжного, разделители), `internal/repository/document.go` (`SearchSimilar` — порог `Score`)
+- [x] **#9 Защита от prompt injection + порог релевантности источников**
+  - Файлы: `internal/rag/engine.go` (sanitizeUntrusted, renderPrompt, promptTmpl, envMinScore, NoRelevantDataAnswer), `internal/repository/document.go` (`SearchSimilar` — порог `Score`), `docker-compose.yml` (`RAG_MIN_SCORE`), `internal/rag/engine_test.go`
   - Критерий: контекст явно помечен как внешние данные; чанки ниже порога не попадают в промпт; при пустом результате — ответ «нет релевантных данных».
+  - Решение: `SearchSimilar` отфильтровывает чанки по `minScore` (cosine similarity ≥ 0.70 по умолчанию, настраивается через `RAG_MIN_SCORE`). Контекст собирается через `text/template` с разделителями `<context>`/`<source_document>`, которые экранируются в данных (`sanitizeUntrusted`). Данные и вопросы очищаются от control-символов и шаблонных слотов. При отсутствии релевантных чанков возвращается `NoRelevantDataAnswer` без вызова LLM.
 
 - [ ] **#10 Логировать реальный HTTP-статус** (сейчас ошибки пишутся как 200)
   - Файлы: `internal/middleware/logger.go` (оценивать статус по возвращённой ошибке `*echo.HTTPError`/`c.Response().Committed`)
