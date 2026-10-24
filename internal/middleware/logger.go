@@ -35,7 +35,18 @@ func Logger(logger *zap.Logger) echo.MiddlewareFunc {
 			duration := time.Since(start)
 			requestID := c.Get("requestID")
 
-			status := c.Response().Status
+			// Extract the real HTTP status code.
+			// Echo defers setting Response.Status until the response is actually
+			// written, so c.Response().Status may still be 200 after next(c).
+			// We extract the status from *echo.HTTPError first, then fall back
+			// to Response.Status if the response was already committed.
+			status := http.StatusOK
+			if he, ok := err.(*echo.HTTPError); ok {
+				status = he.Code
+			} else if c.Response().Committed {
+				status = c.Response().Status
+			}
+
 			var res string
 			switch {
 			case status >= 200 && status < 300:
