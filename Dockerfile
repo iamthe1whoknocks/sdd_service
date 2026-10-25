@@ -1,13 +1,15 @@
-# VulnRAG API — многоступенчатая сборка Go-приложения
+# VulnRAG API — multi-stage build of the Go application
 #
-# Stage 1: сборка статического бинаря (CGO выключен).
-# Stage 2: минимальный runtime на базе alpine + curl для healthcheck.
+# Stage 1: build a static binary (CGO disabled).
+# Stage 2: minimal runtime on alpine + curl for the compose healthcheck.
+# Note: HEALTHCHECK is defined in docker-compose.yml (app service) so that
+# interval/timeout can be tuned without rebuilding the image.
 
 FROM golang:latest AS builder
 
 WORKDIR /src
 
-# Кэш зависимостей: сначала go.mod/go.sum, затем исходники
+# Dependency cache: copy go.mod/go.sum first, then sources
 COPY go.mod go.sum* ./
 RUN go mod download
 
@@ -24,8 +26,5 @@ COPY --from=builder /out/server /usr/local/bin/server
 
 USER app
 EXPOSE 8080
-
-HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
-  CMD curl -fsS http://localhost:8080/health || exit 1
 
 ENTRYPOINT ["/usr/local/bin/server"]

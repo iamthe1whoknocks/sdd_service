@@ -1,8 +1,8 @@
-# VulnRAG — стек: postgres + pgvector, ollama, migrate, app (Go), web (nginx).
-# Все значения с дефолтами можно переопределить в .env (см. .env.example).
+# VulnRAG stack: postgres + pgvector, ollama, migrate, app (Go), web (nginx).
+# All defaults can be overridden via .env (see .env.example).
 #
-# Цепочка запуска:
-#   postgres (healthy) -> migrate (completed) -> app (после БД, миграций и ollama)
+# Startup chain:
+#   postgres (healthy) -> migrate (completed) -> app (after DB, migrations and ollama)
 #   ollama (healthy)   ------------------------> app -> web
 
 name: vulnrag
@@ -14,10 +14,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-vulnrag}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vulnrag}
       POSTGRES_DB: ${POSTGRES_DB:-vulnrag}
-    # Лимит RAM: ноутбук 16 ГБ, БД держим скромной
+    # RAM limit: 16 GB laptop, keep DB modest
     command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=50"]
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -28,7 +28,7 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  # Однократно применяет миграции из ./migrations и завершается
+  # Applies migrations from ./migrations once and exits
   migrate:
     image: migrate/migrate:v4.18.1
     depends_on:
@@ -38,8 +38,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-vulnrag}:${POSTGRES_PASSWORD:-vulnrag}@postgres:5432/${POSTGRES_DB:-vulnrag}?sslmode=disable
     volumes:
       - ./migrations:/migrations
-    # В JSON-массиве command нет shell, поэтому URL подставляет сам compose
-    # (значения берутся из .env / переменных окружения хоста)
+    # JSON-array command has no shell, so compose substitutes the URL itself
+    # (values come from .env / host environment variables)
     command:
       - "-path=/migrations"
       - "-database=postgres://${POSTGRES_USER:-vulnrag}:${POSTGRES_PASSWORD:-vulnrag}@postgres:5432/${POSTGRES_DB:-vulnrag}?sslmode=disable"
@@ -49,7 +49,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     environment:
-      # Лимиты под 16 ГБ RAM: одна модель в памяти, один параллельный запрос
+      # Limits for 16 GB RAM: one model in memory, one parallel request
       OLLAMA_MAX_LOADED_MODELS: "1"
       OLLAMA_NUM_PARALLEL: "1"
       OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-paraphrase-multilingual}
@@ -59,10 +59,10 @@ services:
       - ./docker/ollama/entrypoint.sh:/entrypoint.sh:ro
       - ollama-models:/root/.ollama
     ports:
-      - "${OLLAMA_PORT:-11434}:11434"
-    # Healthcheck честный: считается здоровым только когда LLM уже скачана.
-    # В образе ollama нет curl, поэтому используем ollama list (CLI ходит
-    # в локальный API сам). Первый pull ~2 ГБ может занять до 30 минут
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+    # Honest healthcheck: considered healthy only once the LLM model is pulled.
+    # The ollama image has no curl, so we use `ollama list` (the CLI talks to
+    # the local API itself). First pull ~2 GB may take up to 30 minutes
     # (interval 15s * retries 120).
     healthcheck:
       test: ["CMD-SHELL", "ollama list | grep -q \"${OLLAMA_LLM_MODEL:-qwen2.5:3b}\" || exit 1"]
@@ -91,7 +91,15 @@ services:
       ollama:
         condition: service_healthy
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    # Defined here (not in Dockerfile) so interval/timeout can be tuned
+    # without rebuilding the image. curl is present in the runtime image (alpine).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   web:
@@ -102,8 +110,8 @@ services:
       app:
         condition: service_healthy
     ports:
-      # дефолт 8088: порт 80 на хосте занят системным nginx/apache;
-      # переопределяется через WEB_PORT в .env
+      # Default 8088: host port 80 is taken by system nginx/apache;
+      # override via WEB_PORT in .env
       - "${WEB_PORT:-8088}:80"
     restart: unless-stopped
 

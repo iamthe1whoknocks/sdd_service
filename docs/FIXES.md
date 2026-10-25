@@ -65,9 +65,10 @@
   - Критерий: в логе для 422/413/500/504 виден реальный статус, а не 200.
   - Решение: `Logger` извлекает статус из `*echo.HTTPError` при наличии ошибки; fallback — `c.Response().Status` если ответ уже закоммичен. Echo откладывает установку `Response.Status` до момента записи в HTTP, поэтому чтение после `next(c)` давало 200 по умолчанию.
 
-- [ ] **#11 `healthcheck` для сервиса `app`** + не публиковать лишние порты
+- [x] **#11 `healthcheck` для сервиса `app`** + не публиковать лишние порты
   - Файлы: `docker-compose.yml` (healthcheck на `:8080/health`; убрать/ограничить публикацию `5432`, `11434`)
   - Критерий: `docker compose ps` показывает `app` healthy; `web` корректно стартует после `app`.
+  - Решение: для `app` добавлен `healthcheck` в compose (`curl -fsS http://localhost:8080/health`, `interval=5s`, `timeout=3s`, `retries=5`, `start_period=10s`); `HEALTHCHECK` из `Dockerfile` удалён, чтобы параметры правились без пересборки образа и не было двух источников. `web` уже имел `depends_on: app: condition: service_healthy` — теперь условие реально выполняется. Публикация `postgres:5432`, `ollama:11434` и `app:8080` привязана к `127.0.0.1` (было `0.0.0.0`) — порты доступны для локальной отладки (`psql`, `ollama` CLI, `make test-api`), но не торчат наружу; nginx ходит в `app:8080` по внутренней сети compose, поэтому прокси `/api` не затрагивается. Наружу опубликован только `web`. Обновлены `.env.example` и таблица портов в `README.md`, комментарии в затронутых файлах — на английском.
 
 - [ ] **#12 Ограничить размер скачиваемого файла** (`io.ReadAll` без лимита)
   - Файлы: `internal/vulnlist/vulnlist.go` (`io.LimitReader`/`http.MaxBytesReader`, проверка `Content-Length`)

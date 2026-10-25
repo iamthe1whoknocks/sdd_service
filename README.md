@@ -8,10 +8,10 @@ RAG-ассистент по открытым источникам об уязв�
 | Сервис | Что это | Порт на хосте |
 |---|---|---|
 | `web` | nginx: статика SPA + прокси `/api` → `app:8080` | 80 |
-| `app` | Go API (`net/http`) | 8080 |
-| `postgres` | PostgreSQL 16 + pgvector | 5432 |
+| `app` | Go API (`net/http`) | 127.0.0.1:8080 |
+| `postgres` | PostgreSQL 16 + pgvector | 127.0.0.1:5432 |
 | `migrate` | golang-migrate: применяет `migrations/*.up.sql` | — (однократно) |
-| `ollama` | LLM + эмбеддинги | 11434 |
+| `ollama` | LLM + эмбеддинги | 127.0.0.1:11434 |
 
 Цепочка запуска: `postgres (healthy)` → `migrate (completed)` → `app` (после БД, миграций и ollama) → `web`.
 
