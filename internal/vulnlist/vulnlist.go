@@ -17,7 +17,8 @@ import (
 const (
 	vulnlistURL   = "https://bdu.fstec.ru/files/documents/vullist.xlsx"
 	defaultSheet  = "Уязвимости"
-	timeout       = 120 // seconds for download
+	timeout       = 120          // seconds for download
+	maxBodySize   = 20 << 20     // 20 MB - maximum allowed size for the vullist Excel file
 )
 
 // ruCACerts holds the Russian Trusted CA certificates
@@ -59,6 +60,8 @@ func Download(ctx context.Context) ([]byte, error) {
 		return nil, fmt.Errorf("download failed: status %d", resp.StatusCode)
 	}
 
+	// Limit the response body size to prevent DoS via large files.
+	resp.Body = http.MaxBytesReader(nil, resp.Body, maxBodySize)
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
