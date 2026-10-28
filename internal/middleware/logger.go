@@ -1,3 +1,5 @@
+// Package middleware provides Echo middleware functions for logging, panic
+// recovery, request ID injection and request timeouts.
 package middleware
 
 import (
@@ -9,20 +11,6 @@ import (
 
 	"vulnrag/internal/httperr"
 )
-
-// zapAdapter реализует интерфейс echo.Logger, делегируя вызовы zap.
-type zapAdapter struct {
-	logger *zap.Logger
-}
-
-func (z *zapAdapter) Start() error                          { return nil }
-func (z *zapAdapter) Stop() error                           { return nil }
-func (z *zapAdapter) Info(msg string, args ...interface{})  { z.logger.Sugar().Infof(msg, args...) }
-func (z *zapAdapter) Warn(msg string, args ...interface{})  { z.logger.Sugar().Warnf(msg, args...) }
-func (z *zapAdapter) Error(msg string, args ...interface{}) { z.logger.Sugar().Errorf(msg, args...) }
-func (z *zapAdapter) Fatal(msg string, args ...interface{}) { z.logger.Sugar().Fatalf(msg, args...) }
-func (z *zapAdapter) Debug(msg string, args ...interface{}) { z.logger.Sugar().Debugf(msg, args...) }
-func (z *zapAdapter) Print(msg string, args ...interface{}) { z.logger.Sugar().Infof(msg, args...) }
 
 // Logger logs each request with method, path, status, duration, and request ID.
 func Logger(logger *zap.Logger) echo.MiddlewareFunc {

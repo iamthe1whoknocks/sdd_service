@@ -5,14 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"unicode/utf8"
-
-	"vulnrag/internal/repository"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"go.uber.org/zap"
+
+	"vulnrag/internal/validate"
 )
 
 // AskHandler handles POST /api/v1/ask requests.
@@ -39,13 +38,10 @@ func (h *AskHandler) PostApiV1Ask(c echo.Context) error {
 		return respondError(c, http.StatusBadRequest, "invalid_request", "malformed JSON request body")
 	}
 
-	// Validate question (length in runes, not bytes — docs/FIXES.md #8)
+	// Validate question (single validation path, docs/FIXES.md #14).
 	question := strings.TrimSpace(req.Question)
-	if utf8.RuneCountInString(question) == 0 {
-		return respondError(c, http.StatusUnprocessableEntity, "validation_error", "question is required")
-	}
-	if utf8.RuneCountInString(question) > 4000 {
-		return respondError(c, http.StatusUnprocessableEntity, "validation_error", "question exceeds 4000 characters")
+	if err := validate.Question(question); err != nil {
+		return respondValidationError(c, err)
 	}
 
 	// Call RAG engine under the 60s deadline set by middleware.Timeout
@@ -109,25 +105,18 @@ func (h *DocumentsHandler) PostApiV1Documents(c echo.Context) error {
 		return respondError(c, http.StatusBadRequest, "invalid_request", "malformed JSON request body")
 	}
 
-	// Validate title
+	// Validate payload: one path per field, all rules live in internal/validate
+	// (docs/FIXES.md #14).
 	title := strings.TrimSpace(req.Title)
-	if len(title) == 0 {
-		return respondError(c, http.StatusUnprocessableEntity, "validation_error", "title is required")
+	if err := validate.Title(title); err != nil {
+		return respondValidationError(c, err)
 	}
-	if err := repository.ValidateTitle(req.Title); err != nil {
-		return respondError(c, http.StatusUnprocessableEntity, "validation_error", "title exceeds 500 characters")
-	}
-
-	// Validate content size and presence
-	if err := repository.ValidateContentSize(req.Content); err != nil {
-		return respondError(c, http.StatusRequestEntityTooLarge, "payload_too_large", "content exceeds 1 MB limit")
-	}
-	if len(strings.TrimSpace(req.Content)) == 0 {
-		return respondError(c, http.StatusUnprocessableEntity, "validation_error", "content is required")
+	if err := validate.Content(req.Content); err != nil {
+		return respondValidationError(c, err)
 	}
 
 	// Index the document
-	docID, err := h.Engine.IndexDocument(c.Request().Context(), req.Title, req.Content)
+	docID, err := h.Engine.IndexDocument(c.Request().Context(), title, req.Content)
 	if err != nil {
 		h.Logger.Error("documents: indexing failed",
 			zap.String("request_id", requestID(c)),

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
+	"vulnrag/internal/config"
 )
 
 // OllamaClient provides methods to interact with Ollama API.
@@ -23,18 +23,11 @@ type OllamaClient struct {
 // from the caller's context (with a per-call safety cap, see requestTimeout).
 func NewOllamaClient() *OllamaClient {
 	return &OllamaClient{
-		BaseURL:    getEnvDefault("OLLAMA_HOST", "http://localhost:11434"),
-		EmbedModel: getEnvDefault("EMBED_MODEL", "nomic-embed-text:latest"),
-		LLMModel:   getEnvDefault("LLM_MODEL", "qwen2.5:3b"),
+		BaseURL:    config.String("OLLAMA_HOST", "http://localhost:11434"),
+		EmbedModel: config.String("EMBED_MODEL", "nomic-embed-text:latest"),
+		LLMModel:   config.String("LLM_MODEL", "qwen2.5:3b"),
 		client:     &http.Client{},
 	}
-}
-
-func getEnvDefault(key, def string) string {
-	if val := os.Getenv(key); val != "" {
-		return val
-	}
-	return def
 }
 
 // EmbeddingRequest is the request body for the /api/embeddings endpoint.

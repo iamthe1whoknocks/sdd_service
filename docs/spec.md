@@ -185,7 +185,7 @@ components:
 
 - **Unit-тесты хендлеров** — [`internal/handler/handler_test.go`](../internal/handler/handler_test.go): «чёрный ящик» через `httptest` + фейковый RAG-движок. Не требуют внешних сервисов: все валидации (400/422/413) и таймаут (504) проверяются мгновенно.
 - **Интеграционные тесты** — [`tests/api_test.go`](../tests/api_test.go): ходят в живой API на :8080 (запуск: `make test-api`, тэг `integration`).
-- **Чистая логика** — [`internal/rag/chunker_test.go`](../internal/rag/chunker_test.go), [`internal/repository/embedding_test.go`](../internal/repository/embedding_test.go).
+- **Чистая логика** — [`internal/rag/chunker_test.go`](../internal/rag/chunker_test.go), [`internal/validate/validate_test.go`](../internal/validate/validate_test.go).
 
 Сценарии (эквивалент бывших `features/*.feature`):
 

@@ -9,6 +9,7 @@ import (
 	"text/template"
 	"unicode"
 
+	"vulnrag/internal/config"
 	"vulnrag/internal/repository"
 )
 
@@ -201,7 +202,7 @@ func renderPrompt(results []repository.SearchResult, question string) (string, e
 // envMinScore reads the threshold from RAG_MIN_SCORE. The similarity scale is
 // model-dependent, so the floor must stay configurable.
 func envMinScore(def float64) float64 {
-	raw := getEnvDefault("RAG_MIN_SCORE", "")
+	raw := config.String("RAG_MIN_SCORE", "")
 	if raw == "" {
 		return def
 	}

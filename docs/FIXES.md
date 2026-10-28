@@ -81,17 +81,21 @@
   - Файлы: `api/openapi.yaml`, `internal/handler/*`, `web/src/App.tsx`
   - Критерий: `minLength/maxLength` применяются из схемы; TS-типы генерируются, а не дублируются вручную.
 
-- [ ] **#14 Устранить непоследовательную валидацию** (вручную vs `repository.Validate*`; `ValidateQuestion` не используется)
-  - Файлы: `internal/handler/ask.go`, `internal/repository/embedding.go`
-  - Критерий: один путь валидации на хендлер; валидация вынесена из `repository` в доменный слой.
+- [x] **#14 Устранить непоследовательную валидацию** (правила вынесены в `internal/validate`)
+  - Файлы: `internal/handler/ask.go`, `internal/validate/validate.go`, `internal/handler/errors.go`
+  - Критерий: один путь валидации на хендлер; валидация вынесена из `repository` в пакет `validate`.
+  - Решение: функции `Question`, `Title`, `Content` перемещены в `internal/validate` — это единый источник доменных правил лимитов (runes для title/question, bytes для content). Оба хендлера вызывают эти функции, а не дублируют проверки inline. `repository.ValidateQuestion`, `repository.ValidateTitle`, `repository.ValidateContentSize` удалены. `respondValidationError` в `errors.go` мапит `validate.Error.TooLarge` → 413, всё остальное → 422.
 
-- [ ] **#15 Удалить мёртвый код**
-  - Файлы: `internal/middleware/logger.go` (`zapAdapter` не используется), `internal/middleware/error.go` (заглушка), `internal/repository/document.go` (поле `Answer`), дубль `getEnvDefault` (`main.go`/`ollama.go`)
+- [x] **#15 Удалить мёртвый код**
+  - Файлы: `internal/middleware/logger.go` (`zapAdapter` удалён), `internal/middleware/error.go` (файл удалён), `internal/repository/document.go` (поле `Answer` удалено), `internal/rag/ollama.go`/`cmd/server/main.go` (дубль `getEnvDefault` удалён, единый `internal/config.String`)
   - Критерий: `go vet ./...` чисто; нет неиспользуемых сущностей.
+  - Решение: `zapAdapter` (реализация `echo.Logger`, делегирующая zap) — не используется, удалён. `middleware/error.go` — заглушка с пакетным комментарием, удалён (перенесён в `logger.go`). `SearchResult.Answer` — поле не используется никем, удалено. `getEnvDefault` — дубликат в `main.go` и `rag/ollama.go`; объединён в `internal/config.String` (вызывается из `main.go`, `rag/ollama.go`, `rag/engine.go`).
 
-- [ ] **#16 Батчить вставку эмбеддингов** (сейчас по одному `Exec`)
-  - Файлы: `internal/repository/document.go` (`CreateDocumentWithChunks`)
+
+- [x] **#16 Батчить вставку эмбеддингов** (сейчас по одному `Exec`)
+  - Файлы: `internal/repository/document.go` (`CreateDocumentWithChunks`, `UpsertDocumentWithChunks`, хелперы `insertEmbeddingsBatch`/`buildEmbeddingInsert`), `internal/repository/document_test.go`
   - Критерий: эмбеддинги вставляются батчем/`unnest` в одной транзакции.
+  - Решение: цикл из N `tx.Exec` заменён одним `INSERT INTO embeddings (chunk_id, embedding) VALUES ($1,$2),($3,$4),…` на 256 строк в запросе — лимит страхует от 65535-параметрового ограничения extended-протокола (документ до 1 МБ даёт сотни чанков). Хелпер `insertEmbeddingsBatch` общий для обоих методов, построение SQL вынесено в чистую функцию `buildEmbeddingInsert` и покрыто unit-тестами на фейковом `pgx.Tx` (живая БД не нужна). Транзакционность сохранена: все запросы идут в том же `tx`. Тип параметра не менялся — форма `VALUES ($n,$n+1)` та же, что и в построчном варианте, поэтому кодирование `[]float32 → vector` через pgx остаётся прежним. Вставка чанков оставлена на `pgx.Batch`: ей нужен `RETURNING id`, и она уже отправляется одним round-trip.
 
 - [ ] **#17 Принимать входящий `X-Request-ID`** (сейчас всегда генерируется новый)
   - Файлы: `internal/middleware/requestid.go`
@@ -100,6 +104,12 @@
 - [ ] **#18 UI: `AbortController` для отмены запроса, `key` источников, единый счётчик длины**
   - Файлы: `web/src/App.tsx`
   - Критерий: fetch отменяется при размонтировании/повторном запросе; счётчики совпадают с серверными правилами.
+
+- [ ] **#19 Сгенерированный роутер (`handler.RegisterHandlers`) вызывается только в тестах, в проде — ручная регистрация**
+  - Файлы: `cmd/server/main.go` (ручные `e.POST`), `internal/handler/handler_test.go` (`handler.RegisterHandlers`), `internal/handler/generated.go`
+  - Критерий: в проде и в тестах один и тот же `ServerInterface` оборачивается через `RegisterHandlers`, а не вручную.
+  - Описание: `generated.go` генерирует `RegisterHandlers`, который привязывает маршруты из `openapi.yaml`. В тестах он вызывается (`handler_test.go:48`), в проде — нет (`main.go:106,110` делают `e.POST` вручную). Из-за этого в проде и в тестах **разные** маршруты: разные пути (если `baseURL` в `RegisterHandlersWithBaseURL` будет задан), разный порядок middleware (`Timeout` в проде добавляется вручную, в тестах его нет, потому что тестируются только параметры). Тест может быть зелёным, а прод — на другом роуте или без нужного middleware.
+  - Решение: в `main.go` убрать ручную регистрацию, загрузить схему (`openapi.yaml`) и вызвать `handler.RegisterHandlers`. Добавить в тесты middleware `Timeout`, чтобы конвейер совпадал с продом.
 
 ## ✅ Уже хорошо (не трогаем)
 

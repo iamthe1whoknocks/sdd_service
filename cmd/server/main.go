@@ -1,9 +1,9 @@
-// Package main — точка входа HTTP API сервиса VulnRAG.
+// Package main is the entry point of the VulnRAG HTTP API.
 //
-// Сервис реализует RAG-ассистента по уязвимостям с использованием:
-// - Echo v4 для HTTP-маршрутизации
-// - PostgreSQL 16 + pgvector для хранения и поиска
-// - Ollama для эмбеддингов и генерации ответов
+// The service is a RAG assistant for vulnerabilities built on top of:
+// - Echo v4 for HTTP routing
+// - PostgreSQL 16 + pgvector for storage and search
+// - Ollama for embeddings and answer generation
 package main
 
 import (
@@ -22,6 +22,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
+	"vulnrag/internal/config"
 	"vulnrag/internal/handler"
 	"vulnrag/internal/httperr"
 	"vulnrag/internal/logger"
@@ -33,7 +34,7 @@ import (
 
 func main() {
 	// Initialize logger
-	lvl, err := zapcore.ParseLevel(getEnvDefault("LOG_LEVEL", "info"))
+	lvl, err := zapcore.ParseLevel(config.String("LOG_LEVEL", "info"))
 	if err != nil {
 		lvl = zapcore.InfoLevel
 	}
@@ -44,8 +45,8 @@ func main() {
 	defer zapLogger.Sync()
 
 	// Load configuration from environment
-	port := getEnvDefault("PORT", "8080")
-	dbURL := getEnvDefault("DATABASE_URL", "postgres://vulnrag:vulnrag@localhost:5432/vulnrag?sslmode=disable")
+	port := config.String("PORT", "8080")
+	dbURL := config.String("DATABASE_URL", "postgres://vulnrag:vulnrag@localhost:5432/vulnrag?sslmode=disable")
 
 	// Initialize database connection pool
 	pool, err := pgxpool.New(context.Background(), dbURL)
@@ -215,13 +216,6 @@ func initVulnlist(ctx context.Context, engine *rag.Engine, logger *zap.Logger) e
 	)
 
 	return nil
-}
-
-func getEnvDefault(key, def string) string {
-	if val := os.Getenv(key); val != "" {
-		return val
-	}
-	return def
 }
 
 // verifyEmbeddingDimension generates a test embedding and checks that its

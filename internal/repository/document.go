@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,7 +17,6 @@ type SearchResult struct {
 	Content    string  `json:"content"`
 	Position   int     `json:"position"`
 	Score      float64 `json:"score"`
-	Answer     string  `json:"answer,omitempty"`
 }
 
 // DB provides database operations for documents, chunks, and embeddings.
@@ -60,9 +60,6 @@ func (r *DB) UpsertDocument(ctx context.Context, title, content string) (docID s
 	return docID, true, nil
 }
 
-
-
-
 // SearchSimilar retrieves up to limit chunks whose cosine similarity to
 // queryEmbedding is at least minScore.
 //
@@ -101,7 +98,6 @@ func (r *DB) SearchSimilar(ctx context.Context, queryEmbedding []float32, limit 
 	return results, rows.Err()
 }
 
-
 // CreateDocumentWithChunks atomically inserts a document, its chunks and
 // embeddings in a single transaction.
 func (r *DB) CreateDocumentWithChunks(ctx context.Context, title, content string, chunks []string, embeddings [][]float32) (string, error) {
@@ -123,7 +119,7 @@ func (r *DB) CreateDocumentWithChunks(ctx context.Context, title, content string
 		return "", err
 	}
 
-	// Chunks в батче внутри транзакции
+	// Batch-insert chunks.
 	batch := &pgx.Batch{}
 	for i, ch := range chunks {
 		batch.Queue(
@@ -145,13 +141,9 @@ func (r *DB) CreateDocumentWithChunks(ctx context.Context, title, content string
 		return "", err
 	}
 
-	for i, id := range chunkIDs {
-		if _, err := tx.Exec(ctx,
-			"INSERT INTO embeddings (chunk_id, embedding) VALUES ($1, $2)",
-			id, embeddings[i],
-		); err != nil {
-			return "", err
-		}
+	// Batch-insert embeddings using multi-row VALUES (docs/FIXES.md #16).
+	if err := insertEmbeddingsBatch(ctx, tx, chunkIDs, embeddings); err != nil {
+		return "", err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -230,18 +222,57 @@ func (r *DB) UpsertDocumentWithChunks(ctx context.Context, title, content string
 		return "", false, err
 	}
 
-	// Insert embeddings.
-	for i, id := range chunkIDs {
-		if _, err := tx.Exec(ctx,
-			"INSERT INTO embeddings (chunk_id, embedding) VALUES ($1, $2)",
-			id, embeddings[i],
-		); err != nil {
-			return "", false, err
-		}
+	// Batch-insert embeddings (docs/FIXES.md #16).
+	if err := insertEmbeddingsBatch(ctx, tx, chunkIDs, embeddings); err != nil {
+		return "", false, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return "", false, err
 	}
 	return docID, existingID == "", nil
+}
+
+// maxEmbeddingRowsPerStatement caps the number of rows in a single multi-row
+// VALUES statement to keep the parameter count well below the 65535 limit of
+// the PostgreSQL extended protocol.
+const maxEmbeddingRowsPerStatement = 256
+
+// buildEmbeddingInsert returns a multi-row INSERT statement and its arguments
+// for chunkIDs[from:to].  Each row is a ($n, $n+1) pair, so a document with N
+// chunks costs one statement instead of N round-trips.
+//
+// Each []float32 is sent as a single parameter; PostgreSQL infers the target
+// type from the column and converts the float4 array literal via the pgvector
+// input function, exactly as the previous per-row INSERT did.
+func buildEmbeddingInsert(chunkIDs []int64, embeddings [][]float32, from, to int) (string, []any) {
+	var sb strings.Builder
+	sb.WriteString("INSERT INTO embeddings (chunk_id, embedding) VALUES ")
+	args := make([]any, 0, (to-from)*2)
+	for i := from; i < to; i++ {
+		if i > from {
+			sb.WriteString(",")
+		}
+		// Parameter numbers are local to the statement and start at $1.
+		sb.WriteString(fmt.Sprintf("($%d,$%d)", (i-from)*2+1, (i-from)*2+2))
+		args = append(args, chunkIDs[i], embeddings[i])
+	}
+	return sb.String(), args
+}
+
+// insertEmbeddingsBatch inserts one row per (chunkID, embedding) pair using
+// multi-row VALUES statements instead of a per-row Exec (docs/FIXES.md #16).
+// It runs inside the caller's transaction, so document, chunks and embeddings
+// stay atomic.  Rows are grouped to stay clear of the protocol parameter limit.
+func insertEmbeddingsBatch(ctx context.Context, tx pgx.Tx, chunkIDs []int64, embeddings [][]float32) error {
+	for start := 0; start < len(chunkIDs); start += maxEmbeddingRowsPerStatement {
+		end := min(start+maxEmbeddingRowsPerStatement, len(chunkIDs))
+		query, args := buildEmbeddingInsert(chunkIDs, embeddings, start, end)
+		// A vector of the wrong dimension is rejected by the vector(768)
+		// column, so no extra client-side check is needed here.
+		if _, err := tx.Exec(ctx, query, args...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
