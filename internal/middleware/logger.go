@@ -21,7 +21,7 @@ func Logger(logger *zap.Logger) echo.MiddlewareFunc {
 			err := next(c)
 
 			duration := time.Since(start)
-			requestID := c.Get("requestID")
+			requestID := c.Get(requestIDKey)
 
 			// Extract the real HTTP status code.
 			// Echo defers setting Response.Status until the response is actually

@@ -84,10 +84,13 @@ func main() {
 	// the client gets a generic message (docs/FIXES.md #2).
 	e.HTTPErrorHandler = newErrorHandler(zapLogger)
 
-	// Register global middleware
+	// Register global middleware. RequestID runs first so that the correlation
+	// ID is already in the context and in the response header for every request
+	// that follows, including the ones rejected by BodyLimit or by the router
+	// itself (docs/FIXES.md #17).
+	e.Use(middleware.RequestID())
 	e.Use(middleware.Logger(zapLogger))
 	e.Use(middleware.Recover(zapLogger))
-	e.Use(middleware.RequestID())
 
 	// Limit request body size to protect against DoS (docs/spec.md §4,
 	// docs/FIXES.md #5).  The largest allowed payload is a 1 MB document
