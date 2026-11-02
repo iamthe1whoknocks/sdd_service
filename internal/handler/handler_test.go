@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"vulnrag/internal/handler"
 	"vulnrag/internal/repository"
@@ -31,25 +32,17 @@ func (f *fakeEngine) IndexDocument(ctx context.Context, title, content string) (
 	return f.idxFn(ctx, title, content)
 }
 
-// api bundles both handlers for route registration.
-type api struct {
-	ask  *handler.AskHandler
-	docs *handler.DocumentsHandler
-}
-
-func (a *api) PostApiV1Ask(c echo.Context) error       { return a.ask.PostApiV1Ask(c) }
-func (a *api) PostApiV1Documents(c echo.Context) error { return a.docs.PostApiV1Documents(c) }
-func (a *api) GetHealth(c echo.Context) error          { return c.NoContent(http.StatusOK) }
-
 // newRouter assembles an echo router backed by a fake engine.
+// It uses the same handler.NewRouter as production (docs/FIXES.md #19).
 func newRouter(engine *fakeEngine) *echo.Echo {
-	e := echo.New()
 	log := zap.NewNop()
-	handler.RegisterHandlers(e, &api{
-		ask:  handler.NewAskHandler(engine, log),
-		docs: handler.NewDocumentsHandler(engine, log),
-	})
-	return e
+	srv := &handler.Server{
+		AskHandler:       handler.NewAskHandler(engine, log),
+		DocumentsHandler: handler.NewDocumentsHandler(engine, log),
+	}
+	return handler.NewRouter(srv, handler.RouterConfig{
+		AskTimeout: 60 * time.Second,
+	}, log)
 }
 
 // doJSON performs a request and returns the status code and the response body.

@@ -17,16 +17,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/labstack/echo/v4"
-	echoMiddleware "github.com/labstack/echo/v4/middleware"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
 	"vulnrag/internal/config"
 	"vulnrag/internal/handler"
-	"vulnrag/internal/httperr"
 	"vulnrag/internal/logger"
-	"vulnrag/internal/middleware"
 	"vulnrag/internal/rag"
 	"vulnrag/internal/repository"
 	"vulnrag/internal/vulnlist"
@@ -75,43 +71,15 @@ func main() {
 		zapLogger.Fatal("embedding dimension mismatch", zap.Error(err))
 	}
 
-	// Create Echo router
-	e := echo.New()
-	e.HideBanner = true
-	e.HidePort = true
-
-	// Set custom HTTP error handler: the full error goes to the log only,
-	// the client gets a generic message (docs/FIXES.md #2).
-	e.HTTPErrorHandler = newErrorHandler(zapLogger)
-
-	// Register global middleware. RequestID runs first so that the correlation
-	// ID is already in the context and in the response header for every request
-	// that follows, including the ones rejected by BodyLimit or by the router
-	// itself (docs/FIXES.md #17).
-	e.Use(middleware.RequestID())
-	e.Use(middleware.Logger(zapLogger))
-	e.Use(middleware.Recover(zapLogger))
-
-	// Limit request body size to protect against DoS (docs/spec.md §4,
-	// docs/FIXES.md #5).  The largest allowed payload is a 1 MB document
-	// content wrapped in JSON, so ~1 MB + 64 KB overhead is sufficient.
-	e.Use(echoMiddleware.BodyLimit("1MB+64KB"))
-
-	// Health endpoint
-	e.GET("/health", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
-	})
-
-	// Ask endpoint: enforce the 60s generation deadline from the spec
-	// (docs/spec.md §4/§9, docs/FIXES.md #4). middleware.Timeout puts the
-	// deadline on the request context; the handler maps
-	// context.DeadlineExceeded to 504 via errors.Is.
-	askHandler := handler.NewAskHandler(engine, zapLogger)
-	e.POST("/api/v1/ask", askHandler.PostApiV1Ask, middleware.Timeout(60*time.Second))
-
-	// Documents endpoint
-	docHandler := handler.NewDocumentsHandler(engine, zapLogger)
-	e.POST("/api/v1/documents", docHandler.PostApiV1Documents)
+	// Build the router with a shared pipeline: global middleware + generated
+	// route registration from api/openapi.yaml (docs/FIXES.md #19).
+	api := &handler.Server{
+		AskHandler:       handler.NewAskHandler(engine, zapLogger),
+		DocumentsHandler: handler.NewDocumentsHandler(engine, zapLogger),
+	}
+	e := handler.NewRouter(api, handler.RouterConfig{
+		AskTimeout: 60 * time.Second,
+	}, zapLogger)
 
 	// Start server. WriteTimeout is aligned with the 60s /ask deadline plus a
 	// small margin for writing the 504 response, so the deadline handled by
@@ -247,49 +215,4 @@ func verifyEmbeddingDimension(ctx context.Context, ollama *rag.OllamaClient, exp
 	return nil
 }
 
-// newErrorHandler returns the Echo HTTP error handler that logs the full
-// error and replies with only generic details (docs/FIXES.md #2).
-func newErrorHandler(log *zap.Logger) echo.HTTPErrorHandler {
-	return func(err error, c echo.Context) {
-		logErr := func(lvl zapcore.Level, msg string, status int) {
-			if ce := log.Check(lvl, msg); ce != nil {
-				ce.Write(
-					zap.String("request_id", requestIDFrom(c)),
-					zap.String("method", c.Request().Method),
-					zap.String("path", c.Request().URL.Path),
-					zap.Int("status", status),
-					zap.Error(err),
-				)
-			}
-		}
 
-		he, ok := err.(*echo.HTTPError)
-		if !ok {
-			logErr(zapcore.ErrorLevel, "unhandled handler error", http.StatusInternalServerError)
-			_ = httperr.Write(c, http.StatusInternalServerError, "internal_error", "internal server error")
-			return
-		}
-
-		if he.Code >= http.StatusInternalServerError {
-			logErr(zapcore.ErrorLevel, "handler error", he.Code)
-			_ = httperr.Write(c, he.Code, "internal_error", "internal server error")
-			return
-		}
-
-		// 4xx: the message is safe to expose (e.g. echo.ErrNotFound -> "Not Found").
-		logErr(zapcore.InfoLevel, "request rejected", he.Code)
-		detail := http.StatusText(he.Code)
-		if msg, ok := he.Message.(string); ok && msg != "" {
-			detail = msg
-		}
-		_ = httperr.Write(c, he.Code, "http_error", detail)
-	}
-}
-
-// requestIDFrom returns the request ID set by the RequestID middleware.
-func requestIDFrom(c echo.Context) string {
-	if v, ok := c.Get("requestID").(string); ok {
-		return v
-	}
-	return ""
-}
