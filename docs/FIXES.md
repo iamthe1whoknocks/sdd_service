@@ -75,7 +75,7 @@
   - Критерий: файл больше лимита отклоняется без чтения в память целиком.
   - Решение: `http.MaxBytesReader` ограничивает тело ответа лимитом 20 МБ (`maxBodySize`); при превышении возвращается ошибка, файл не читается в память.
 
-## 🟡 Средне / на улучшение
+## 🟡 Средне / на 
 
 - [ ] **#13 Единый источник правил валидации** (strict-генерация oapi-codegen / TS-типы из `openapi.yaml`)
   - Файлы: `api/openapi.yaml`, `internal/handler/*`, `web/src/App.tsx`
@@ -115,10 +115,6 @@
   - Критерий: в проде и в тестах один и тот же `ServerInterface` оборачивается через `RegisterHandlers`, а не вручную.
   - Решение: создан `internal/handler/router.go` — единая функция `NewRouter`, вызываемая из `main.go` (prod) и `handler_test.go` (tests). Она создаёт Echo, настраивает HTTPErrorHandler, глобальные middleware (RequestID, Logger, Recover, BodyLimit) и регистрирует маршруты через сгенерированный `RegisterHandlers` с `middlewareRegistrar`, который добавляет `Timeout(60s)` только на `POST /api/v1/ask`. Старая ручная регистрация (`e.POST(...)`) и inline `/health` удалены из `main.go`. Тестовый `fakeEngine`/`api`/`newRouter` заменены на общий `handler.Server` + `handler.NewRouter`. Формат `BodyLimit` исправлен с `"1MB+64KB"` (не поддерживается echo v4.13.4) на `"1MB"`.
 
-- [ ] **#20 Отдать наружу стабильный идентификатор источника (`Source.id`)**
-  - Файлы: `api/openapi.yaml`, `docs/spec.md` §5, `internal/handler/generated.go` (перегенерация), `internal/handler/ask.go`, `web/src/App.tsx`
-  - Критерий: каждый элемент `sources` содержит идентификатор чанка (`chunks.id` есть в `repository.SearchResult.ChunkID`, но в ответ не попадает); фронтенд использует его как `key` вместо композитного ключа из `title`+`url`+`snippet`.
-  - Описание: вынесено из #18, потому что требует изменения контракта (схема `Source`, спека, генерация, тесты), а не только фронтенда.
 
 ## ✅ Уже хорошо (не трогаем)
 
