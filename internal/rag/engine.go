@@ -53,9 +53,21 @@ type promptData struct {
 	Question string
 }
 
+// documentStore is the storage subset the Engine actually depends on.  It is
+// unexported on purpose: production code keeps passing *repository.DB (which
+// satisfies it without any change), while unit tests can substitute an
+// in-memory store and observe whether embeddings were recomputed
+// (docs/TODO_SIGNIFICANT.md SIG-2).
+type documentStore interface {
+	SearchSimilar(ctx context.Context, queryEmbedding []float32, limit int, minScore float64) ([]repository.SearchResult, error)
+	CreateDocumentWithChunks(ctx context.Context, title, content string, chunks []string, embeddings [][]float32) (string, error)
+	UpsertDocumentWithChunks(ctx context.Context, title, content string, chunks []string, embeddings [][]float32) (string, bool, error)
+	ContentAndIDByTitle(ctx context.Context, title string) (id, content string, exists bool, err error)
+}
+
 // Engine orchestrates the RAG pipeline: retrieve → prompt → generate.
 type Engine struct {
-	repo     *repository.DB
+	repo     documentStore
 	ollama   *OllamaClient
 	chunker  *Chunker
 	topK     int
@@ -131,29 +143,57 @@ func (e *Engine) IndexDocument(ctx context.Context, title, content string) (stri
 	return docID, nil
 }
 
+// UpsertResult tells the caller how much work UpsertDocumentWithChunks did.
+// The distinction matters for logging: created=false covers both "content
+// changed, embeddings regenerated" and "content identical, nothing computed"
+// (docs/TODO_SIGNIFICANT.md SIG-2).  A plain bool cannot separate them, so the
+// startup log would not be able to report the real amount of skipped work.
+type UpsertResult struct {
+	DocID     string
+	Created   bool // the document row was inserted
+	Unchanged bool // stored content matched: Ollama was not called at all
+}
+
 // UpsertDocumentWithChunks is like IndexDocument but idempotent: if a document
 // with the same title already exists, its chunks and embeddings are replaced.
 // Returns (docID, true) on insert and (docID, false) on update.
-func (e *Engine) UpsertDocumentWithChunks(ctx context.Context, title, content string) (string, bool, error) {
+//
+// When the stored content is byte-for-byte identical to the new content, the
+// document is already indexed correctly: the existing id is returned with
+// created=false and Ollama is not called at all.  Chunking is a pure function
+// of the content, so equal content means equal chunks and equal embeddings —
+// recomputing them would only repeat the previous result
+// (docs/TODO_SIGNIFICANT.md SIG-2).
+func (e *Engine) UpsertDocumentWithChunks(ctx context.Context, title, content string) (UpsertResult, error) {
+	// Best-effort pre-check: a concurrent writer may change the row between
+	// this read and the upsert below.  The cost of losing the race is one
+	// redundant re-index, never a wrong state, so the background indexing of a
+	// single instance does not need a transaction spanning both calls.
+	existingID, existingContent, found, err := e.repo.ContentAndIDByTitle(ctx, title)
+	if err != nil {
+		return UpsertResult{}, fmt.Errorf("check already indexed document: %w", err)
+	}
+	if found && existingContent == content {
+		return UpsertResult{DocID: existingID, Unchanged: true}, nil
+	}
+
 	chunks := e.chunker.Chunk(content)
 
 	embeddings := make([][]float32, 0, len(chunks))
 	for _, chunk := range chunks {
 		emb, err := e.ollama.GenerateEmbedding(ctx, chunk)
 		if err != nil {
-			return "", false, fmt.Errorf("generate embedding for chunk: %w", err)
+			return UpsertResult{}, fmt.Errorf("generate embedding for chunk: %w", err)
 		}
 		embeddings = append(embeddings, emb)
 	}
 
 	docID, created, err := e.repo.UpsertDocumentWithChunks(ctx, title, content, chunks, embeddings)
 	if err != nil {
-		return "", false, fmt.Errorf("upsert document: %w", err)
+		return UpsertResult{}, fmt.Errorf("upsert document: %w", err)
 	}
-	return docID, created, nil
+	return UpsertResult{DocID: docID, Created: created}, nil
 }
-
-
 
 // sanitizeUntrusted prepares knowledge-base text for the prompt:
 //   - escapes the block delimiters, so retrieved data cannot close its own block;
@@ -185,7 +225,7 @@ func renderPrompt(results []repository.SearchResult, question string) (string, e
 	}
 	for i, r := range results {
 		data.Sources = append(data.Sources, promptSource{
-			Index:   i + 1,
+			Index: i + 1,
 			// Title is untrusted too (it comes from the source spreadsheet),
 			// so it goes in as a single line of text, not as an XML attribute.
 			Title:   strings.ReplaceAll(sanitizeUntrusted(r.Title), "\n", " "),

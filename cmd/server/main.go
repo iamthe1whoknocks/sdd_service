@@ -126,6 +126,22 @@ func main() {
 	zapLogger.Info("server stopped")
 }
 
+// upsertOutcome names how much work a single UpsertDocumentWithChunks call
+// reported for one registry row.  It is extracted from initVulnlist so the
+// counting rules behind docs/TODO_SIGNIFICANT.md SIG-2 are unit-testable:
+// cmd/server has no tests of its own, and a misclassified row is exactly the
+// failure that makes the startup summary lie about skipped computation.
+func upsertOutcome(res rag.UpsertResult) string {
+	switch {
+	case res.Unchanged:
+		return "unchanged"
+	case res.Created:
+		return "indexed"
+	default:
+		return "updated"
+	}
+}
+
 func initVulnlist(ctx context.Context, engine *rag.Engine, logger *zap.Logger) error {
 	logger.Info("downloading vullist from official source")
 
@@ -149,41 +165,58 @@ func initVulnlist(ctx context.Context, engine *rag.Engine, logger *zap.Logger) e
 
 	// Step 3: Upsert each row as a document (idempotent — no duplicates on
 	// repeated starts, docs/FIXES.md #7).
-	var indexed, skipped int
+	//
+	// Counters are keyed by upsertOutcome so the summary reflects the actual
+	// amount of work (docs/TODO_SIGNIFICANT.md SIG-2):
+	//   indexed   — new document, embeddings generated and inserted
+	//   updated   — existing document with changed content, re-embedded
+	//   unchanged — existing document with identical content, Ollama untouched
+	//   skipped   — rows that were not indexed at all (empty title, error)
+	counts := map[string]int{"indexed": 0, "updated": 0, "unchanged": 0, "skipped": 0}
 	for i, row := range rows {
 		title := vulnlist.ToDocumentTitle(row)
 		if title == "" {
 			logger.Debug("skipping row with empty title", zap.Int("row", i+1))
-			skipped++
+			counts["skipped"]++
 			continue
 		}
 
 		content := vulnlist.ToDocumentContent(row)
-		docID, created, err := engine.UpsertDocumentWithChunks(ctx, title, content)
+		res, err := engine.UpsertDocumentWithChunks(ctx, title, content)
 		if err != nil {
 			logger.Error("upserting row failed",
 				zap.Int("row", i+1),
 				zap.String("title", title),
 				zap.Error(err),
 			)
-			skipped++
+			counts["skipped"]++
 			continue
 		}
-		if !created {
-			logger.Debug("skipped (already indexed)",
+
+		outcome := upsertOutcome(res)
+		counts[outcome]++
+		switch outcome {
+		case "unchanged":
+			logger.Debug("skipped (content unchanged, embeddings not recomputed)",
 				zap.Int("row", i+1),
 				zap.String("title", title),
-				zap.String("doc_id", docID),
+				zap.String("doc_id", res.DocID),
 			)
-			continue
+		case "updated":
+			logger.Debug("re-indexed (content changed)",
+				zap.Int("row", i+1),
+				zap.String("title", title),
+				zap.String("doc_id", res.DocID),
+			)
 		}
-		indexed++
 	}
 
 	logger.Info("vullist indexing completed",
 		zap.Int("total", len(rows)),
-		zap.Int("indexed", indexed),
-		zap.Int("skipped", skipped),
+		zap.Int("indexed", counts["indexed"]),
+		zap.Int("updated", counts["updated"]),
+		zap.Int("unchanged", counts["unchanged"]),
+		zap.Int("skipped", counts["skipped"]),
 	)
 
 	return nil
@@ -214,5 +247,3 @@ func verifyEmbeddingDimension(ctx context.Context, ollama *rag.OllamaClient, exp
 	log.Info("embedding dimension verified", zap.Int("dimension", actualDim))
 	return nil
 }
-
-

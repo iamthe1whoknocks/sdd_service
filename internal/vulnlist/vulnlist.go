@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	_ "embed"
+	"crypto/x509"
+	"embed"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,16 +19,53 @@ const (
 	vulnlistURL   = "https://bdu.fstec.ru/files/documents/vullist.xlsx"
 	defaultSheet  = "Уязвимости"
 	timeout       = 120          // seconds for download
-	maxBodySize   = 20 << 20     // 20 MB - maximum allowed size for the vullist Excel file
+	maxBodySize   = 50 << 20     // 50 MB - maximum allowed size for the vullist Excel file
 )
 
-// ruCACerts holds the Russian Trusted CA certificates
-// (Russian Trusted Root CA and Russian Trusted Sub CA 2024, Ministry of Digital
-// Development of the Russian Federation). bdu.fstec.ru is signed by these CAs,
-// which are absent from the system trust stores (Mozilla/Go), so TLS
-// verification fails without them.
-// Source: https://gu-st.ru/content/lending/russian_trusted_{root,sub_ca_2024}_pem.crt
+// embeddedCACerts holds the official Russian Trusted CA certificates
+// (Ministry of Digital Development and Communications) that sign the
+// bdu.fstec.ru server certificate. They are embedded in the binary because
+// the issuer is not part of the default system CA bundle (Mozilla) shipped
+// with most operating systems.
 //
+//go:embed certs/*.crt
+var embeddedCACerts embed.FS
+
+// caPool builds the TLS root pool used to verify connections to
+// bdu.fstec.ru: the system CA pool (Mozilla) extended with the embedded
+// Russian Trusted Root CA and Russian Trusted Sub CA (2024).
+func caPool() (*x509.CertPool, error) {
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		// Fall back to an empty pool: the embedded certificates alone
+		// are sufficient to verify bdu.fstec.ru.
+		pool = x509.NewCertPool()
+	}
+
+	entries, err := embeddedCACerts.ReadDir("certs")
+	if err != nil {
+		return nil, fmt.Errorf("read embedded CA certs: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := "certs/" + entry.Name()
+		pem, err := embeddedCACerts.ReadFile(name)
+		if err != nil {
+			return nil, fmt.Errorf("read embedded CA cert %s: %w", name, err)
+		}
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("embedded CA cert %s contains no valid PEM block", name)
+		}
+	}
+	return pool, nil
+}
+
+// Download fetches the vullist Excel file from the official FSTEC BDU registry.
+// TLS is fully verified: the client trusts the system CA pool extended with
+// the embedded Russian Trusted Root CA and Russian Trusted Sub CA (2024),
+// which issue the bdu.fstec.ru server certificate.
 
 // Row represents a single row from the vullist Excel file.
 type Row struct {
@@ -35,18 +73,23 @@ type Row struct {
 	Values  []string
 }
 
-// Download fetches the vullist Excel file from the official source.
 func Download(ctx context.Context) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, vulnlistURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
+	pool, err := caPool()
+	if err != nil {
+		return nil, fmt.Errorf("build CA pool: %w", err)
+	}
+
 	client := &http.Client{
 		Timeout: timeout * time.Second,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
+				RootCAs:    pool,
+				MinVersion: tls.VersionTLS12,
 			},
 		},
 	}

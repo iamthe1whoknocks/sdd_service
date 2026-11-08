@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -40,6 +41,28 @@ func (r *DB) CreateDocument(ctx context.Context, title, content string) (string,
 		return "", err
 	}
 	return id, nil
+}
+
+// ContentAndIDByTitle returns the id and stored content of the document with
+// the given title.  The last result reports whether such a document exists.
+// The RAG layer uses it as a cheap pre-check before generating embeddings
+// (docs/TODO_SIGNIFICANT.md SIG-2): when the content is unchanged there is
+// nothing to recompute, and the caller still needs the id to report the skip.
+//
+// The check is best effort: another writer may change the row before the
+// subsequent upsert.  For the single-instance background indexing this race is
+// harmless — the upsert still converges to the correct state.
+func (r *DB) ContentAndIDByTitle(ctx context.Context, title string) (id, content string, exists bool, err error) {
+	err = r.pool.QueryRow(ctx,
+		"SELECT id, content FROM documents WHERE title = $1", title,
+	).Scan(&id, &content)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, fmt.Errorf("select document content by title: %w", err)
+	}
+	return id, content, true, nil
 }
 
 // UpsertDocument inserts a document with the given title or updates it if a
