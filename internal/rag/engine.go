@@ -18,6 +18,14 @@ const (
 	NoRelevantDataAnswer = "Релевантных данных в базе знаний не найдено."
 	sourceTagPrefix      = "<source_document"
 	endSourceTag         = "</source_document>"
+
+	// embedBatchSize bounds how many texts go into a single /api/embed call.
+	// Ollama accepts arbitrarily large inputs, but a huge batch holds the
+	// connection for a long time and can hit the per-call cap (SIG-4) on a
+	// cold model; 32 keeps one call well inside the cap while cutting the
+	// number of round-trips by two orders of magnitude
+	// (docs/TODO_SIGNIFICANT.md SIG-5).
+	embedBatchSize = 32
 )
 
 const promptText = `You are a security analyst assistant. Answer the question using ONLY the context below.
@@ -120,19 +128,44 @@ func (e *Engine) Ask(ctx context.Context, question string) (string, []repository
 	return answer, results, nil
 }
 
+// generateEmbeddingsBatched embeds every chunk, sending at most
+// embedBatchSize texts per HTTP call.  The result is aligned with chunks one
+// to one: len(returned) == len(chunks).
+//
+// The length check is not defensive noise.  A response carrying fewer vectors
+// than requested would silently pair chunk[i] with another text's embedding
+// and write that mismatch into the knowledge base, where retrieval would then
+// surface wrong documents.
+func (e *Engine) generateEmbeddingsBatched(ctx context.Context, chunks []string) ([][]float32, error) {
+	embeddings := make([][]float32, 0, len(chunks))
+	for start := 0; start < len(chunks); start += embedBatchSize {
+		end := start + embedBatchSize
+		if end > len(chunks) {
+			end = len(chunks)
+		}
+
+		batch, err := e.ollama.GenerateEmbeddings(ctx, chunks[start:end])
+		if err != nil {
+			return nil, fmt.Errorf("generate embeddings for chunks %d-%d: %w", start, end-1, err)
+		}
+		if len(batch) != end-start {
+			return nil, fmt.Errorf("ollama returned %d embeddings for %d chunks", len(batch), end-start)
+		}
+
+		embeddings = append(embeddings, batch...)
+	}
+	return embeddings, nil
+}
+
 // IndexDocument processes a document: chunk it, generate embeddings, and store.
 func (e *Engine) IndexDocument(ctx context.Context, title, content string) (string, error) {
 	chunks := e.chunker.Chunk(content)
 
 	// Step 1: generate all embeddings first — fallible external calls,
 	// no DB state is touched yet, so a failure leaves nothing behind.
-	embeddings := make([][]float32, 0, len(chunks))
-	for _, chunk := range chunks {
-		emb, err := e.ollama.GenerateEmbedding(ctx, chunk)
-		if err != nil {
-			return "", fmt.Errorf("generate embedding for chunk: %w", err)
-		}
-		embeddings = append(embeddings, emb)
+	embeddings, err := e.generateEmbeddingsBatched(ctx, chunks)
+	if err != nil {
+		return "", err
 	}
 
 	// Step 2: persist document, chunks and embeddings atomically.
@@ -179,13 +212,9 @@ func (e *Engine) UpsertDocumentWithChunks(ctx context.Context, title, content st
 
 	chunks := e.chunker.Chunk(content)
 
-	embeddings := make([][]float32, 0, len(chunks))
-	for _, chunk := range chunks {
-		emb, err := e.ollama.GenerateEmbedding(ctx, chunk)
-		if err != nil {
-			return UpsertResult{}, fmt.Errorf("generate embedding for chunk: %w", err)
-		}
-		embeddings = append(embeddings, emb)
+	embeddings, err := e.generateEmbeddingsBatched(ctx, chunks)
+	if err != nil {
+		return UpsertResult{}, err
 	}
 
 	docID, created, err := e.repo.UpsertDocumentWithChunks(ctx, title, content, chunks, embeddings)

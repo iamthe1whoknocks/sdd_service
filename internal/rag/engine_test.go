@@ -2,6 +2,7 @@ package rag
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -183,22 +184,43 @@ func (f *fakeStore) docID(title string) string {
 	return id
 }
 
-// stubOllama starts an Ollama stub answering /api/embeddings and returns a
-// client pointing at it plus a counter of embedding requests.  The engine
-// exercises its real HTTP path, so the counter cannot be fooled by a stubbed
-// Go method.
+// stubOllama starts an Ollama stub answering both /api/embeddings (single
+// chunk) and /api/embed (batch) and returns a client pointing at it plus a
+// counter of embedding requests.  The engine exercises its real HTTP path, so
+// the counter cannot be fooled by a stubbed Go method.
 func stubOllama(t *testing.T) (*OllamaClient, *atomic.Int64) {
 	t.Helper()
 
 	var calls atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/embeddings" {
-			http.NotFound(w, r)
+		if r.URL.Path == "/api/embeddings" {
+			// Single-embedding path — unchanged from before SIG-5.
+			calls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"embedding":[0.1,0.2,0.3]}`)
 			return
 		}
-		calls.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"embedding":[0.1,0.2,0.3]}`)
+		if r.URL.Path == "/api/embed" {
+			// Batch path — new for SIG-5.
+			calls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			// Decode the request to learn how many embeddings to return.
+			var req BatchEmbeddingRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			// Build a response with one embedding per requested text.
+			embeds := make([][]float32, len(req.Input))
+			for i := range embeds {
+				embeds[i] = []float32{0.1, 0.2, 0.3}
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"embeddings": embeds,
+			})
+			return
+		}
+		http.NotFound(w, r)
 	}))
 	t.Cleanup(srv.Close)
 

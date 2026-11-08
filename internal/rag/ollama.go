@@ -72,6 +72,17 @@ type EmbeddingResponse struct {
 	Embedding []float32 `json:"embedding"`
 }
 
+// BatchEmbeddingRequest is the request body for the /api/embed endpoint.
+type BatchEmbeddingRequest struct {
+	Model string   `json:"model"`
+	Input []string `json:"input"`
+}
+
+// BatchEmbeddingResponse is the response from the /api/embed endpoint.
+type BatchEmbeddingResponse struct {
+	Embeddings [][]float32 `json:"embeddings"`
+}
+
 // GenerateRequest is the request body for the /api/generate endpoint.
 type GenerateRequest struct {
 	Model   string                 `json:"model"`
@@ -92,6 +103,62 @@ type GenerateResponse struct {
 // GenerateFullResponse accumulates the full response from streaming.
 type GenerateFullResponse struct {
 	Answer string
+}
+
+// GenerateEmbeddings creates embedding vectors for multiple texts in a single
+// Ollama call via the /api/embed endpoint (docs/TODO_SIGNIFICANT.md SIG-5).
+//
+// texts must be non-empty; if len(texts) == 0 the method returns an empty
+// slice (no HTTP round-trip).  The per-call cap from withCallTimeout bounds
+// the request the same way as GenerateEmbedding does
+// (docs/TODO_SIGNIFICANT.md SIG-4).
+func (c *OllamaClient) GenerateEmbeddings(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return nil, nil
+	}
+
+	ctx, cancel := c.withCallTimeout(ctx)
+	defer cancel()
+
+	reqBody := BatchEmbeddingRequest{
+		Model: c.EmbedModel,
+		Input: texts,
+	}
+
+	jsonBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal batch embedding request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/api/embed", bytes.NewReader(jsonBytes))
+	if err != nil {
+		return nil, fmt.Errorf("error creating batch embed request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+
+	if err != nil {
+		return nil, fmt.Errorf("call ollama batch embeddings: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("ollama batch embeddings error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var embedResp BatchEmbeddingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&embedResp); err != nil {
+		return nil, fmt.Errorf("decode batch embedding response: %w", err)
+	}
+
+	if len(embedResp.Embeddings) == 0 {
+		return nil, fmt.Errorf("empty batch embedding returned")
+	}
+
+	return embedResp.Embeddings, nil
 }
 
 // GenerateEmbedding creates an embedding vector for the given text.

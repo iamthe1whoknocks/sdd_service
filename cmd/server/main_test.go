@@ -1,9 +1,16 @@
 package main
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"vulnrag/internal/rag"
+
+	"go.uber.org/zap"
 )
 
 // TestUpsertOutcome is the regression guard for the counting rules of
@@ -49,6 +56,58 @@ func TestUpsertOutcome(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestVerifyEmbeddingDimensionRejectsWrongModel is the regression guard for
+// docs/TODO_SIGNIFICANT.md SIG-5 criterion 3: the startup probe must still
+// reject a model whose vector size does not match the vector(N) column.
+//
+// The client is built by NewOllamaClient with OLLAMA_HOST pointed at a stub, so
+// the check exercises the real HTTP path rather than a Go-level fake.  The stub
+// answers the single-text /api/embeddings endpoint that the probe uses.
+func TestVerifyEmbeddingDimensionRejectsWrongModel(t *testing.T) {
+	t.Setenv("OLLAMA_HOST", embeddingStub(t, `{"embedding":[0.1,0.2]}`))
+
+	err := verifyEmbeddingDimension(context.Background(), rag.NewOllamaClient(), 768, zap.NewNop())
+	if err == nil {
+		t.Fatal("verifyEmbeddingDimension accepted a 2-dim model for a 768-dim column")
+	}
+	// The message must name both dimensions: it is the operator's only hint
+	// about whether to fix the migration or the model.
+	for _, want := range []string{"2", "768"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
+// TestVerifyEmbeddingDimensionAcceptsMatchingModel pins the other half: a model
+// of the right size must pass, otherwise startup would fail on every correct
+// configuration.
+func TestVerifyEmbeddingDimensionAcceptsMatchingModel(t *testing.T) {
+	t.Setenv("OLLAMA_HOST", embeddingStub(t, `{"embedding":[0.1,0.2,0.3]}`))
+
+	if err := verifyEmbeddingDimension(context.Background(), rag.NewOllamaClient(), 3, zap.NewNop()); err != nil {
+		t.Fatalf("verifyEmbeddingDimension = %v, want nil for a matching model", err)
+	}
+}
+
+// embeddingStub starts an Ollama stub answering /api/embeddings with body and
+// returns its URL.
+func embeddingStub(t *testing.T, body string) string {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/embeddings" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, body)
+	}))
+	t.Cleanup(srv.Close)
+
+	return srv.URL
 }
 
 // TestUpsertOutcomeCoversEveryResult makes sure the three names the counters in
