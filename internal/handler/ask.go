@@ -115,9 +115,18 @@ func (h *DocumentsHandler) PostApiV1Documents(c echo.Context) error {
 		return respondValidationError(c, err)
 	}
 
-	// Index the document
+	// Index the document under the documents timeout set by middleware.Timeout.
+	// Detect deadline via errors.Is (same pattern as AskHandler) so a timeout
+	// returns 504 Gateway Timeout instead of 500 (docs/TODO_SIGNIFICANT.md SIG-4).
 	docID, err := h.Engine.IndexDocument(c.Request().Context(), title, req.Content)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			h.Logger.Warn("documents: indexing timed out",
+				zap.String("request_id", requestID(c)),
+				zap.Error(err),
+			)
+			return respondError(c, http.StatusGatewayTimeout, "timeout", "document indexing timed out")
+		}
 		h.Logger.Error("documents: indexing failed",
 			zap.String("request_id", requestID(c)),
 			zap.String("title", title),

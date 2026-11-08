@@ -41,7 +41,8 @@ func newRouter(engine *fakeEngine) *echo.Echo {
 		DocumentsHandler: handler.NewDocumentsHandler(engine, log),
 	}
 	return handler.NewRouter(srv, handler.RouterConfig{
-		AskTimeout: 60 * time.Second,
+		AskTimeout:       60 * time.Second,
+		DocumentsTimeout: 300 * time.Second,
 	}, log)
 }
 
@@ -265,6 +266,25 @@ func TestDocumentsIndexError(t *testing.T) {
 	}
 	if strings.Contains(detail, internalErr) {
 		t.Errorf("detail утекает внутреннюю ошибку: %q", detail)
+	}
+}
+
+// TestDocumentsIndexTimeout checks that a context deadline exceeded during
+// document indexing is mapped to 504 Gateway Timeout, matching the pattern of
+// TestAskTimeout (docs/TODO_SIGNIFICANT.md SIG-4).
+func TestDocumentsIndexTimeout(t *testing.T) {
+	e := newRouter(&fakeEngine{
+		idxFn: func(_ context.Context, _, _ string) (string, error) {
+			return "", context.DeadlineExceeded
+		},
+	})
+	status, body := doJSON(t, e, "/api/v1/documents",
+		`{"title":"ok","content":"some content"}`)
+	if status != http.StatusGatewayTimeout {
+		t.Fatalf("status = %d, want 504 (body=%v)", status, body)
+	}
+	if detail := errorDetail(body); detail != "document indexing timed out" {
+		t.Errorf("detail = %q, want %q", detail, "document indexing timed out")
 	}
 }
 

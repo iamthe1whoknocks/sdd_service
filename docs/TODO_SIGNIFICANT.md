@@ -193,7 +193,7 @@ INSERT/UPDATE — без `FOR UPDATE` и без `ON CONFLICT`. Два парал
 
 ---
 
-## - [ ] SIG-4. У `POST /api/v1/documents` нет дедлайна, у HTTP-клиента Ollama нет таймаута (несуществующий `requestTimeout`)
+## - [x] SIG-4. У `POST /api/v1/documents` нет дедлайна, у HTTP-клиента Ollama нет таймаута (несуществующий `requestTimeout`)
 
 **Приоритет:** высокий (надёжность).
 
@@ -234,14 +234,29 @@ INSERT/UPDATE — без `FOR UPDATE` и без `ON CONFLICT`. Два парал
 
 ### Критерии приёмки
 
-- [ ] У обоих маршрутов (`/ask`, `/documents`) есть deadline от middleware.
-- [ ] HTTP-клиент Ollama ограничен per-call cap; зависание Ollama больше не
+- [x] У обоих маршрутов (`/ask`, `/documents`) есть deadline от middleware.
+- [x] HTTP-клиент Ollama ограничен per-call cap; зависание Ollama больше не
       вешает хендлер навсегда.
-- [ ] Комментарии в коде соответствуют реализации (нет ссылок на
+- [x] Комментарии в коде соответствуют реализации (убрана ссылка на
       несуществующий `requestTimeout`).
-- [ ] `go test ./...` проходит; интеграционные тесты `internal/handler` не
-      сломаны изменением сигнатуры `RouterConfig` (проверить
-      `internal/handler/handler_test.go`).
+- [x] `go test ./...` проходит; интеграционные тесты `internal/handler` не
+      сломаны изменением сигнатуры `RouterConfig` (проверено).
+- [x] Хендлер `/documents` корректно маппит `context.DeadlineExceeded` в
+      504 Gateway Timeout (дополнительно к пункту #1).
+
+### Что фактически изменилось
+
+| Файл | Изменение |
+| --- | --- |
+| `internal/config/config.go` | новый метод `Duration(key, def)` — парсит env как `time.Duration` с защитой от пустых/некорректных значений |
+| `internal/rag/ollama.go` | поле `callTimeout` (по умолч. 120s из `OLLAMA_CALL_TIMEOUT`); метод `withCallTimeout(ctx)` — обёртка `context.WithTimeout` поверх вызывающего контекста; применение в `GenerateEmbedding` и `GenerateAnswer`; защитный fallback на `defaultCallTimeout` при нулевом значении (важно для hand-built клиентов в тестах); исправлен комментарий `NewOllamaClient` |
+| `internal/handler/router.go` | `RouterConfig` получил `DocumentsTimeout`; `middlewareRegistrar` разделяет `askTimeout` и `documentsTimeout`; `POST()` навешивает `middleware.Timeout` на оба POST-маршрута по пути |
+| `internal/handler/ask.go` | `PostApiV1Documents` теперь маппит `context.DeadlineExceeded` → 504 (дублирует паттерн `AskHandler`) |
+| `cmd/server/main.go` | `RouterConfig` передаёт `DocumentsTimeout: 300s`; `WriteTimeout` повышен до 305s (documentsTimeout + запас 5s) |
+| `internal/handler/handler_test.go` | `newRouter` передаёт `DocumentsTimeout: 300s`; добавлен `TestDocumentsIndexTimeout` |
+| `internal/rag/ollama_test.go` | новый файл: `TestGenerateEmbeddingIsBoundedByCallCap`, `TestGenerateAnswerIsBoundedByCallCap`, `TestWithCallTimeoutAppliesCap`, `TestWithCallTimeoutNeverExtendsTighterCallerDeadline`, `TestWithCallTimeoutZeroValueFallsBackToDefault`, `TestNewOllamaClientReadsCallTimeoutFromEnv`, `TestNewOllamaClientDefaultsCallTimeout` |
+| `internal/config/config_test.go` | новый файл: `TestDurationReturnsDefaultWhenEmpty`, `TestDurationReturnsDefaultWhenEmptyString`, `TestDurationParsesValidValue`, `TestDurationParsesMinutes`, `TestDurationReturnsDefaultOnInvalidValue`, `TestDurationReturnsDefaultOnNegativeValue` |
+
 
 ---
 

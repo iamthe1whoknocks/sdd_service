@@ -64,12 +64,16 @@ func NewHTTPErrorHandler(log *zap.Logger) echo.HTTPErrorHandler {
 // the same path definitions from api/openapi.yaml.
 type middlewareRegistrar struct {
 	*echo.Echo
-	timeout time.Duration
+	askTimeout       time.Duration
+	documentsTimeout time.Duration
 }
 
 func (r middlewareRegistrar) POST(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
-	if path == "/api/v1/ask" {
-		m = append(m, middleware.Timeout(r.timeout))
+	switch path {
+	case "/api/v1/ask":
+		m = append(m, middleware.Timeout(r.askTimeout))
+	case "/api/v1/documents":
+		m = append(m, middleware.Timeout(r.documentsTimeout))
 	}
 	return r.Echo.POST(path, h, m...)
 }
@@ -88,7 +92,8 @@ func (s *Server) GetHealth(c echo.Context) error {
 
 // RouterConfig holds the HTTP pipeline parameters shared by prod and tests.
 type RouterConfig struct {
-	AskTimeout time.Duration // deadline for POST /api/v1/ask (60s by spec)
+	AskTimeout       time.Duration // deadline for POST /api/v1/ask (60s by spec)
+	DocumentsTimeout time.Duration // deadline for POST /api/v1/documents (docs/TODO_SIGNIFICANT.md SIG-4)
 }
 
 // NewRouter creates a fully configured Echo router.  The same function is
@@ -107,10 +112,11 @@ func NewRouter(si ServerInterface, cfg RouterConfig, log *zap.Logger) *echo.Echo
 	e.Use(middleware.Recover(log))
 	e.Use(echoMiddleware.BodyLimit("1MB"))
 
-	// Register routes from api/openapi.yaml.  The registrar adds the 60s
-	// timeout middleware only on POST /api/v1/ask so that /health and
-	// /documents stay unaffected (docs/FIXES.md #4, #19).
-	reg := middlewareRegistrar{Echo: e, timeout: cfg.AskTimeout}
+	// Register routes from api/openapi.yaml.  The registrar adds the
+	// per-route timeout middleware on POST /api/v1/ask (60s by spec) and
+	// POST /api/v1/documents (docs/TODO_SIGNIFICANT.md SIG-4) so that
+	// /health stays unaffected (docs/FIXES.md #4, #19).
+	reg := middlewareRegistrar{Echo: e, askTimeout: cfg.AskTimeout, documentsTimeout: cfg.DocumentsTimeout}
 	RegisterHandlers(reg, si)
 
 	return e

@@ -7,8 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 	"vulnrag/internal/config"
 )
+
+// defaultCallTimeout bounds a single Ollama HTTP call when the caller's
+// context carries no deadline of its own (docs/TODO_SIGNIFICANT.md SIG-4).
+const defaultCallTimeout = 120 * time.Second
 
 // OllamaClient provides methods to interact with Ollama API.
 type OllamaClient struct {
@@ -16,18 +21,44 @@ type OllamaClient struct {
 	EmbedModel string
 	LLMModel   string
 	client     *http.Client
+	// callTimeout is the per-call safety cap applied on top of the caller's
+	// context by withCallTimeout.
+	callTimeout time.Duration
 }
 
 // NewOllamaClient creates a new Ollama client from environment variables.
-// The client has no fixed HTTP timeout: each request derives its deadline
-// from the caller's context (with a per-call safety cap, see requestTimeout).
+//
+// The underlying http.Client deliberately has no fixed Timeout: the effective
+// deadline of every request comes from its context.  Each call wraps the
+// caller's context with the per-call cap OLLAMA_CALL_TIMEOUT (default 120s,
+// see withCallTimeout), so a hung Ollama can never pin a handler goroutine
+// forever, while a shorter caller deadline (e.g. the 60s /ask middleware)
+// still wins (docs/TODO_SIGNIFICANT.md SIG-4).
 func NewOllamaClient() *OllamaClient {
 	return &OllamaClient{
-		BaseURL:    config.String("OLLAMA_HOST", "http://localhost:11434"),
-		EmbedModel: config.String("EMBED_MODEL", "nomic-embed-text:latest"),
-		LLMModel:   config.String("LLM_MODEL", "qwen2.5:3b"),
-		client:     &http.Client{},
+		BaseURL:     config.String("OLLAMA_HOST", "http://localhost:11434"),
+		EmbedModel:  config.String("EMBED_MODEL", "nomic-embed-text:latest"),
+		LLMModel:    config.String("LLM_MODEL", "qwen2.5:3b"),
+		client:      &http.Client{},
+		callTimeout: config.Duration("OLLAMA_CALL_TIMEOUT", defaultCallTimeout),
 	}
+}
+
+// withCallTimeout bounds a single Ollama call by the per-call cap.
+//
+// context.WithTimeout derives a deadline of min(parent deadline, callTimeout),
+// so the cap never extends a tighter caller deadline and never outlives the
+// parent context.  The returned cancel func must be called to release resources.
+//
+// A non-positive callTimeout (the zero value of a hand-built OllamaClient, as
+// used in tests) falls back to defaultCallTimeout: an unset cap must mean the
+// documented default, not an already-expired deadline that fails every call.
+func (c *OllamaClient) withCallTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	timeout := c.callTimeout
+	if timeout <= 0 {
+		timeout = defaultCallTimeout
+	}
+	return context.WithTimeout(ctx, timeout)
 }
 
 // EmbeddingRequest is the request body for the /api/embeddings endpoint.
@@ -65,6 +96,9 @@ type GenerateFullResponse struct {
 
 // GenerateEmbedding creates an embedding vector for the given text.
 func (c *OllamaClient) GenerateEmbedding(ctx context.Context, text string) ([]float32, error) {
+	ctx, cancel := c.withCallTimeout(ctx)
+	defer cancel()
+
 	reqBody := EmbeddingRequest{
 		Model:  c.EmbedModel,
 		Prompt: text,
@@ -108,6 +142,9 @@ func (c *OllamaClient) GenerateEmbedding(ctx context.Context, text string) ([]fl
 
 // GenerateAnswer generates an answer using the LLM.
 func (c *OllamaClient) GenerateAnswer(ctx context.Context, prompt string) (string, error) {
+	ctx, cancel := c.withCallTimeout(ctx)
+	defer cancel()
+
 	reqBody := GenerateRequest{
 		Model:  c.LLMModel,
 		Prompt: prompt,

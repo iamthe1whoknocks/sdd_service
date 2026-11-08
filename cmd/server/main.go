@@ -77,20 +77,25 @@ func main() {
 		AskHandler:       handler.NewAskHandler(engine, zapLogger),
 		DocumentsHandler: handler.NewDocumentsHandler(engine, zapLogger),
 	}
+
+	const askTimeout = 60 * time.Second
+	const documentsTimeout = 300 * time.Second
+
 	e := handler.NewRouter(api, handler.RouterConfig{
-		AskTimeout: 60 * time.Second,
+		AskTimeout:       askTimeout,
+		DocumentsTimeout: documentsTimeout,
 	}, zapLogger)
 
-	// Start server. WriteTimeout is aligned with the 60s /ask deadline plus a
-	// small margin for writing the 504 response, so the deadline handled by
-	// middleware.Timeout always fires before the connection is cut
-	// (docs/FIXES.md #4).
+	// Start server. WriteTimeout must cover the longest route deadline
+	// (/documents) plus a small margin for writing the timeout response, so
+	// the deadline handled by middleware.Timeout always fires before the
+	// connection is cut (docs/FIXES.md #4, docs/TODO_SIGNIFICANT.md SIG-4).
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           e,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      65 * time.Second,
+		WriteTimeout:      documentsTimeout + 5*time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
