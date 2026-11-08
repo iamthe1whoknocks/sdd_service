@@ -144,7 +144,7 @@ indexed)` и рассчитывает на идемпотентность, но
 
 ---
 
-## - [ ] SIG-3. Гонка (TOCTOU) в `UpsertDocumentWithChunks` репозитория + мёртвый некорректный `UpsertDocument`
+## - [x] SIG-3. Гонка (TOCTOU) в `UpsertDocumentWithChunks` репозитория + мёртвый некорректный `UpsertDocument`
 
 **Приоритет:** средний.
 
@@ -156,7 +156,7 @@ INSERT/UPDATE — без `FOR UPDATE` и без `ON CONFLICT`. Два парал
 запроса с одинаковым title (эндпоинт `POST /api/v1/documents` публичный):
 один вставит документ, второй упадёт с unique violation (ограничение
 уникальности добавлено миграцией `migrations/0002_unique_document_title.up.sql`)
-вместо корректного апсерта.
+вместо корректного апсёрта.
 
 Дополнительно: [`DB.UpsertDocument()`](../internal/repository/document.go:49)
 не используется нигде и всегда возвращает `created=true` независимо от того,
@@ -178,12 +178,18 @@ INSERT/UPDATE — без `FOR UPDATE` и без `ON CONFLICT`. Два парал
 
 ### Критерии приёмки
 
-- [ ] В `internal/repository/document.go` нет SELECT-then-branch для title.
-- [ ] Мёртвый `UpsertDocument` удалён.
-- [ ] Параллельные (последовательные в тесте) апсерты одного title не дают
+- [x] В `internal/repository/document.go` нет SELECT-then-branch для title.
+- [x] Мёртвый `UpsertDocument` удалён.
+- [x] Параллельные (последовательные в тесте) апсерты одного title не дают
       ошибок; второй возвращает `created=false`.
-- [ ] `go test ./internal/repository/...` проходит (если тесты требуют БД —
+- [x] `go test ./internal/repository/...` проходит (если тесты требуют БД —
       отметить, что проверено на `make test-api`).
+
+### Что фактически изменилось
+
+| Файл | Изменение |
+| --- | --- |
+| `internal/repository/document.go` | Удалён мёртвый `UpsertDocument`; `UpsertDocumentWithChunks` переписан на `INSERT ... ON CONFLICT (title) DO UPDATE SET content = EXCLUDED.content RETURNING id, (xmax = 0) AS created` — один атомарный запрос вместо SELECT+ветвления; вынесен хелпер `insertDocChunksAndEmbeddings`, устраняющий дублирование между `CreateDocumentWithChunks` и `UpsertDocumentWithChunks` |
 
 ---
 
