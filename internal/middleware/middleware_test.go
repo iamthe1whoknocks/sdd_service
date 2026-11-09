@@ -47,7 +47,7 @@ func TestRecoverErrorShape(t *testing.T) {
 
 // TestTimeoutPropagatesDeadline verifies that the Timeout middleware puts a
 // deadline on the request context so that downstream code can observe it via
-// ctx.Deadline() and errors.Is(ctx.Err(), context.DeadlineExceeded) (docs/FIXES.md #4).
+// ctx.Deadline() and errors.Is(ctx.Err(), context.DeadlineExceeded).
 func TestTimeoutPropagatesDeadline(t *testing.T) {
 	e := echo.New()
 
@@ -69,7 +69,7 @@ func TestTimeoutPropagatesDeadline(t *testing.T) {
 	}
 }
 
-// --- RequestID (docs/FIXES.md #17) ---
+// --- RequestID ---
 
 // serveRequestID runs one request through the RequestID middleware and returns
 // the ID echoed in the response header together with the ID the handler

@@ -76,7 +76,7 @@ func TestRenderPrompt(t *testing.T) {
 }
 
 // TestRenderPromptInjection checks that a document containing fake block
-// delimiters cannot break out of the untrusted-data block (docs/FIXES.md #9).
+// delimiters cannot break out of the untrusted-data block.
 func TestRenderPromptInjection(t *testing.T) {
 	results := []repository.SearchResult{
 		{
@@ -243,7 +243,7 @@ func newTestEngine(store documentStore, ollama *OllamaClient) *Engine {
 }
 
 // TestUpsertSkipsUnchangedContent is the regression guard for
-// docs/TODO_SIGNIFICANT.md SIG-2: re-upserting the same title with the same
+// SIG-2: re-upserting the same title with the same
 // content must not generate a single embedding.
 func TestUpsertSkipsUnchangedContent(t *testing.T) {
 	store := &fakeStore{

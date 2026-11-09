@@ -33,7 +33,7 @@ func (f *fakeEngine) IndexDocument(ctx context.Context, title, content string) (
 }
 
 // newRouter assembles an echo router backed by a fake engine.
-// It uses the same handler.NewRouter as production (docs/FIXES.md #19).
+// It uses the same handler.NewRouter as production.
 func newRouter(engine *fakeEngine) *echo.Echo {
 	log := zap.NewNop()
 	srv := &handler.Server{
@@ -158,7 +158,7 @@ func TestAskTimeout(t *testing.T) {
 }
 
 // TestAskEngineError checks that an internal engine error returns 500 and the
-// response does not leak the internal error details (docs/FIXES.md #2).
+// response does not leak the internal error details.
 func TestAskEngineError(t *testing.T) {
 	const internalErr = "ollama is down: connection refused to 10.0.0.4:11434"
 	e := newRouter(&fakeEngine{
@@ -181,7 +181,7 @@ func TestAskEngineError(t *testing.T) {
 
 // TestAskNoRelevantData checks that a question with no chunks above the
 // relevance floor returns 200 with a fixed answer and an empty sources list
-// instead of 500 (docs/FIXES.md #9).
+// instead of 500.
 func TestAskNoRelevantData(t *testing.T) {
 	e := newRouter(&fakeEngine{
 		askFn: func(_ context.Context, _ string) (string, []repository.SearchResult, error) {
@@ -247,7 +247,7 @@ func TestDocumentsValidation(t *testing.T) {
 
 // TestDocumentsIndexError checks that an indexing failure returns 500 (an
 // internal server error, not a client validation problem) and does not leak
-// the internal error details to the client (docs/FIXES.md #2, #3).
+// the internal error details to the client.
 func TestDocumentsIndexError(t *testing.T) {
 	const internalErr = "embedding failed: ollama returned HTTP 503"
 	e := newRouter(&fakeEngine{
@@ -271,7 +271,7 @@ func TestDocumentsIndexError(t *testing.T) {
 
 // TestDocumentsIndexTimeout checks that a context deadline exceeded during
 // document indexing is mapped to 504 Gateway Timeout, matching the pattern of
-// TestAskTimeout (docs/TODO_SIGNIFICANT.md SIG-4).
+// TestAskTimeout.
 func TestDocumentsIndexTimeout(t *testing.T) {
 	e := newRouter(&fakeEngine{
 		idxFn: func(_ context.Context, _, _ string) (string, error) {

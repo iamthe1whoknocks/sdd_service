@@ -13,7 +13,7 @@ import (
 // hangingOllama starts a stub that never answers within the test's lifetime:
 // the handler blocks until the per-call cap cancels the request.  This
 // emulates a stuck Ollama process, the exact failure
-// docs/TODO_SIGNIFICANT.md SIG-4 is about.
+// SIG-4 is about.
 //
 // The release channel unblocks the handler during cleanup so that srv.Close(),
 // which waits for outstanding requests, returns immediately instead of

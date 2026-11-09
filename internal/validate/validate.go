@@ -2,7 +2,7 @@
 //
 // It is the single source of truth for input validation: the limits live here,
 // not in the HTTP handlers and not in the database repository
-// (docs/FIXES.md #14). Transport layers map Error.TooLarge to 413 and any
+// Transport layers map Error.TooLarge to 413 and any
 // other violation to 422 without re-implementing the rules.
 package validate
 
@@ -19,7 +19,7 @@ const (
 	MaxContentBytes = 1 << 20 // 1 MB
 	// MaxTitleRunes and MaxQuestionRunes bound text in RUNES (Unicode code
 	// points), which is what OpenAPI maxLength and the web UI counter use
-	// (docs/FIXES.md #8).
+	// (500 and 4 000 respectively).
 	MaxTitleRunes    = 500
 	MaxQuestionRunes = 4000
 )

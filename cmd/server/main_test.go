@@ -14,7 +14,7 @@ import (
 )
 
 // TestUpsertOutcome is the regression guard for the counting rules of
-// docs/TODO_SIGNIFICANT.md SIG-2.  cmd/server had no tests, so a row whose
+// cmd/server had no tests, so a row whose
 // embeddings were recomputed could be logged as a skipped computation (and the
 // other way round) without any check noticing.
 func TestUpsertOutcome(t *testing.T) {
@@ -59,7 +59,7 @@ func TestUpsertOutcome(t *testing.T) {
 }
 
 // TestVerifyEmbeddingDimensionRejectsWrongModel is the regression guard for
-// docs/TODO_SIGNIFICANT.md SIG-5 criterion 3: the startup probe must still
+// the startup probe must still
 // reject a model whose vector size does not match the vector(N) column.
 //
 // The client is built by NewOllamaClient with OLLAMA_HOST pointed at a stub, so

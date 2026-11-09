@@ -9,7 +9,7 @@ import (
 // String returns the value of the environment variable key, or def when the
 // variable is unset or empty. It is the single shared implementation; the
 // original getEnvDefault was duplicated in cmd/server/main.go and
-// internal/rag/ollama.go (docs/FIXES.md #15).
+// internal/rag/ollama.go.
 func String(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -19,7 +19,7 @@ func String(key, def string) string {
 
 // Duration returns the value of the environment variable key parsed as a
 // time.Duration (e.g. "90s", "2m"), or def when the variable is unset, empty
-// or not a valid duration (docs/TODO_SIGNIFICANT.md SIG-4).
+// or not a valid duration.
 func Duration(key string, def time.Duration) time.Duration {
 	v := os.Getenv(key)
 	if v == "" {

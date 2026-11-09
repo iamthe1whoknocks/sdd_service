@@ -46,7 +46,7 @@ func (r *DB) CreateDocument(ctx context.Context, title, content string) (string,
 // ContentAndIDByTitle returns the id and stored content of the document with
 // the given title.  The last result reports whether such a document exists.
 // The RAG layer uses it as a cheap pre-check before generating embeddings
-// (docs/TODO_SIGNIFICANT.md SIG-2): when the content is unchanged there is
+// (SIG-2): when the content is unchanged there is
 // nothing to recompute, and the caller still needs the id to report the skip.
 //
 // The check is best effort: another writer may change the row before the
@@ -70,7 +70,7 @@ func (r *DB) ContentAndIDByTitle(ctx context.Context, title string) (id, content
 //
 // A plain k-NN query always returns `limit` rows, even when the whole
 // knowledge base is irrelevant. Filtering by minScore keeps noise out of the
-// prompt (docs/FIXES.md #9). The filter runs after ordering so the scan stays
+// prompt. The filter runs after ordering so the scan stays
 // a plain index-backed k-NN query.
 func (r *DB) SearchSimilar(ctx context.Context, queryEmbedding []float32, limit int, minScore float64) ([]SearchResult, error) {
 	rows, err := r.pool.Query(ctx,
@@ -140,7 +140,7 @@ func (r *DB) CreateDocumentWithChunks(ctx context.Context, title, content string
 // Returns (docID, true) on insert, (docID, false) on update.
 //
 // Uses a single INSERT … ON CONFLICT statement to avoid the TOCTOU race
-// (docs/TODO_SIGNIFICANT.md SIG-3): two concurrent calls with the same title
+// (SIG-3): two concurrent calls with the same title
 // no longer collide with a unique-violation — the second one cleanly becomes
 // an update.
 func (r *DB) UpsertDocumentWithChunks(ctx context.Context, title, content string, chunks []string, embeddings [][]float32) (string, bool, error) {
@@ -188,7 +188,7 @@ func (r *DB) UpsertDocumentWithChunks(ctx context.Context, title, content string
 
 // insertDocChunksAndEmbeddings inserts chunks and embeddings for a document
 // inside an already-started transaction.  Chunks are batched via pgx.Batch,
-// embeddings use multi-row VALUES (docs/FIXES.md #16).
+// embeddings use multi-row VALUES.
 func insertDocChunksAndEmbeddings(ctx context.Context, tx pgx.Tx, docID string, chunks []string, embeddings [][]float32) error {
 	// Batch-insert chunks.
 	batch := &pgx.Batch{}
@@ -247,7 +247,7 @@ func buildEmbeddingInsert(chunkIDs []int64, embeddings [][]float32, from, to int
 }
 
 // insertEmbeddingsBatch inserts one row per (chunkID, embedding) pair using
-// multi-row VALUES statements instead of a per-row Exec (docs/FIXES.md #16).
+// multi-row VALUES statements instead of a per-row Exec.
 // It runs inside the caller's transaction, so document, chunks and embeddings
 // stay atomic.  Rows are grouped to stay clear of the protocol parameter limit.
 func insertEmbeddingsBatch(ctx context.Context, tx pgx.Tx, chunkIDs []int64, embeddings [][]float32) error {

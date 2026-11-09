@@ -22,7 +22,7 @@ const (
 // and otherwise generates a fresh UUID. The resulting ID is written to the
 // response header and to the echo context for downstream logging, so a client
 // that correlates its own request with server logs sees the same ID on both
-// sides (docs/spec.md §9, docs/FIXES.md #17).
+// sides.
 //
 // An inbound ID is untrusted input: it reaches the access log and is reflected
 // back in a response header, so only a conservative allowlist of characters is

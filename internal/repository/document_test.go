@@ -78,7 +78,7 @@ func TestBuildEmbeddingInsert(t *testing.T) {
 }
 
 // TestInsertEmbeddingsBatchIsNotPerRow is the regression guard for
-// docs/FIXES.md #16: N embeddings must cost one statement, not N Exec calls.
+// N embeddings must cost one statement, not N Exec calls.
 func TestInsertEmbeddingsBatchIsNotPerRow(t *testing.T) {
 	ids, emb := makeRows(50)
 	tx := &fakeTx{}

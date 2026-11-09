@@ -46,7 +46,7 @@ func TestQuestion(t *testing.T) {
 }
 
 // TestLengthsInRunes verifies that the title and question limits are measured
-// in Unicode runes rather than bytes, per docs/FIXES.md #8.
+// in Unicode runes rather than bytes.
 func TestLengthsInRunes(t *testing.T) {
 	// 500 Cyrillic characters = 1000 bytes — valid, exactly at the rune limit.
 	if err := Title(strings.Repeat("т", 500)); err != nil {

@@ -72,7 +72,7 @@ func main() {
 	}
 
 	// Build the router with a shared pipeline: global middleware + generated
-	// route registration from api/openapi.yaml (docs/FIXES.md #19).
+	// route registration from api/openapi.yaml.
 	api := &handler.Server{
 		AskHandler:       handler.NewAskHandler(engine, zapLogger),
 		DocumentsHandler: handler.NewDocumentsHandler(engine, zapLogger),
@@ -89,7 +89,7 @@ func main() {
 	// Start server. WriteTimeout must cover the longest route deadline
 	// (/documents) plus a small margin for writing the timeout response, so
 	// the deadline handled by middleware.Timeout always fires before the
-	// connection is cut (docs/FIXES.md #4, docs/TODO_SIGNIFICANT.md SIG-4).
+	// connection is cut.
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           e,
@@ -102,8 +102,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Index vullist in the background so the server becomes ready immediately
-	// (docs/FIXES.md #7).  A per-start timeout prevents a slow Ollama from
+	// Index vullist in the background so the server becomes ready immediately.
+	// A per-start timeout prevents a slow Ollama from
 	// hanging the startup goroutine forever.
 	go func() {
 		initCtx, initCancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -133,7 +133,7 @@ func main() {
 
 // upsertOutcome names how much work a single UpsertDocumentWithChunks call
 // reported for one registry row.  It is extracted from initVulnlist so the
-// counting rules behind docs/TODO_SIGNIFICANT.md SIG-2 are unit-testable:
+// counting rules are unit-testable:
 // cmd/server has no tests of its own, and a misclassified row is exactly the
 // failure that makes the startup summary lie about skipped computation.
 func upsertOutcome(res rag.UpsertResult) string {
@@ -169,10 +169,10 @@ func initVulnlist(ctx context.Context, engine *rag.Engine, logger *zap.Logger) e
 	}
 
 	// Step 3: Upsert each row as a document (idempotent — no duplicates on
-	// repeated starts, docs/FIXES.md #7).
+	// repeated starts).
 	//
 	// Counters are keyed by upsertOutcome so the summary reflects the actual
-	// amount of work (docs/TODO_SIGNIFICANT.md SIG-2):
+	// amount of work:
 	//   indexed   — new document, embeddings generated and inserted
 	//   updated   — existing document with changed content, re-embedded
 	//   unchanged — existing document with identical content, Ollama untouched
@@ -229,8 +229,7 @@ func initVulnlist(ctx context.Context, engine *rag.Engine, logger *zap.Logger) e
 
 // verifyEmbeddingDimension generates a test embedding and checks that its
 // length matches the expected dimension.  This ensures the configured Ollama
-// embedding model is compatible with the vector(N) column in the database
-// (docs/FIXES.md #6).
+// embedding model is compatible with the vector(N) column in the database.
 func verifyEmbeddingDimension(ctx context.Context, ollama *rag.OllamaClient, expectedDim int, log *zap.Logger) error {
 	log.Info("verifying embedding model dimension", zap.String("model", ollama.EmbedModel), zap.Int("expected_dim", expectedDim))
 

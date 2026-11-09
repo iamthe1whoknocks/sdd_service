@@ -12,7 +12,7 @@ import (
 //
 // The middleware itself does not write a response: the handler observes the
 // deadline via errors.Is(err, context.DeadlineExceeded) and maps it to a 504
-// Gateway Timeout (docs/FIXES.md #4). This keeps the status code and the
+// Gateway Timeout. This keeps the status code and the
 // error contract under the handler's control instead of relying on a
 // fixed-status middleware.
 func Timeout(timeout time.Duration) echo.MiddlewareFunc {

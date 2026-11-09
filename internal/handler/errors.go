@@ -19,7 +19,7 @@ func respondError(c echo.Context, code int, etype, detail string) error {
 
 // respondValidationError maps a validation error to the contract response:
 // 413 for byte-limit violations, 422 for field-level violations
-// (docs/spec.md §4, docs/FIXES.md #14).
+// (docs/spec.md §4).
 func respondValidationError(c echo.Context, err error) error {
 	var ve *validate.Error
 	if errors.As(err, &ve) && ve.TooLarge {

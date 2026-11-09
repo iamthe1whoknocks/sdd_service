@@ -22,7 +22,7 @@ type AskHandler struct {
 
 // NewAskHandler creates the POST /api/v1/ask handler.
 // The logger is created in cmd/server/main.go and passed here so that every
-// handler error is logged with full details (see docs/FIXES.md #2).
+// handler error is logged with full details.
 func NewAskHandler(engine Asker, logger *zap.Logger) *AskHandler {
 	return &AskHandler{Engine: engine, Logger: logger}
 }
@@ -38,7 +38,7 @@ func (h *AskHandler) PostApiV1Ask(c echo.Context) error {
 		return respondError(c, http.StatusBadRequest, "invalid_request", "malformed JSON request body")
 	}
 
-	// Validate question (single validation path, docs/FIXES.md #14).
+	// Validate question (single validation path).
 	question := strings.TrimSpace(req.Question)
 	if err := validate.Question(question); err != nil {
 		return respondValidationError(c, err)
@@ -46,7 +46,7 @@ func (h *AskHandler) PostApiV1Ask(c echo.Context) error {
 
 	// Call RAG engine under the 60s deadline set by middleware.Timeout
 	// (cmd/server/main.go). A deadline is detected through the error chain
-	// with errors.Is, never by string matching (docs/FIXES.md #4).
+	// with errors.Is, never by string matching.
 	answer, sources, err := h.Engine.Ask(c.Request().Context(), question)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -89,7 +89,7 @@ type DocumentsHandler struct {
 
 // NewDocumentsHandler creates the POST /api/v1/documents handler.
 // The logger is created in cmd/server/main.go and passed here so that every
-// handler error is logged with full details (see docs/FIXES.md #2).
+// handler error is logged with full details.
 func NewDocumentsHandler(engine Indexer, logger *zap.Logger) *DocumentsHandler {
 	return &DocumentsHandler{Engine: engine, Logger: logger}
 }
@@ -105,8 +105,7 @@ func (h *DocumentsHandler) PostApiV1Documents(c echo.Context) error {
 		return respondError(c, http.StatusBadRequest, "invalid_request", "malformed JSON request body")
 	}
 
-	// Validate payload: one path per field, all rules live in internal/validate
-	// (docs/FIXES.md #14).
+	// Validate payload: one path per field, all rules live in internal/validate.
 	title := strings.TrimSpace(req.Title)
 	if err := validate.Title(title); err != nil {
 		return respondValidationError(c, err)
@@ -117,7 +116,7 @@ func (h *DocumentsHandler) PostApiV1Documents(c echo.Context) error {
 
 	// Index the document under the documents timeout set by middleware.Timeout.
 	// Detect deadline via errors.Is (same pattern as AskHandler) so a timeout
-	// returns 504 Gateway Timeout instead of 500 (docs/TODO_SIGNIFICANT.md SIG-4).
+	// returns 504 Gateway Timeout instead of 500.
 	docID, err := h.Engine.IndexDocument(c.Request().Context(), title, req.Content)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -133,7 +132,7 @@ func (h *DocumentsHandler) PostApiV1Documents(c echo.Context) error {
 			zap.Error(err),
 		)
 		// An indexing failure is an internal server error (Ollama/DB down),
-		// not a client validation problem (docs/FIXES.md #3).
+		// not a client validation problem.
 		return respondError(c, http.StatusInternalServerError, "internal_error", "document indexing failed")
 	}
 

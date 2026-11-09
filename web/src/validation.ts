@@ -1,11 +1,11 @@
 // Client mirror of the payload rules in internal/validate/validate.go
 // (docs/spec.md §4, FE-4). This module is the single source of truth for the
-// web UI: components must not re-implement the limits inline (docs/FIXES.md #18).
+// web UI: components must not re-implement the limits inline.
 //
 // The measurements have to stay identical to the server, otherwise the client
 // rejects payloads the server would accept (or the other way round):
 //   - question and title are bounded in Unicode code points (runes), like
-//     utf8.RuneCountInString on the server (docs/FIXES.md #8);
+//     utf8.RuneCountInString on the server;
 //   - content is bounded in BYTES, like len(string) on the server,
 //     octet_length(content) in migrations and echo BodyLimit;
 //   - length checks run on the TRIMMED value, because the handlers trim the

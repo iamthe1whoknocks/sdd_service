@@ -12,7 +12,7 @@ import (
 )
 
 // defaultCallTimeout bounds a single Ollama HTTP call when the caller's
-// context carries no deadline of its own (docs/TODO_SIGNIFICANT.md SIG-4).
+// context carries no deadline of its own (SIG-4).
 const defaultCallTimeout = 120 * time.Second
 
 // OllamaClient provides methods to interact with Ollama API.
@@ -33,7 +33,7 @@ type OllamaClient struct {
 // caller's context with the per-call cap OLLAMA_CALL_TIMEOUT (default 120s,
 // see withCallTimeout), so a hung Ollama can never pin a handler goroutine
 // forever, while a shorter caller deadline (e.g. the 60s /ask middleware)
-// still wins (docs/TODO_SIGNIFICANT.md SIG-4).
+// still wins (SIG-4).
 func NewOllamaClient() *OllamaClient {
 	return &OllamaClient{
 		BaseURL:     config.String("OLLAMA_HOST", "http://localhost:11434"),
@@ -106,12 +106,12 @@ type GenerateFullResponse struct {
 }
 
 // GenerateEmbeddings creates embedding vectors for multiple texts in a single
-// Ollama call via the /api/embed endpoint (docs/TODO_SIGNIFICANT.md SIG-5).
+// Ollama call via the /api/embed endpoint (SIG-5).
 //
 // texts must be non-empty; if len(texts) == 0 the method returns an empty
 // slice (no HTTP round-trip).  The per-call cap from withCallTimeout bounds
 // the request the same way as GenerateEmbedding does
-// (docs/TODO_SIGNIFICANT.md SIG-4).
+// (SIG-4).
 func (c *OllamaClient) GenerateEmbeddings(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, nil

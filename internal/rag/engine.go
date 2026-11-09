@@ -24,7 +24,7 @@ const (
 	// connection for a long time and can hit the per-call cap (SIG-4) on a
 	// cold model; 32 keeps one call well inside the cap while cutting the
 	// number of round-trips by two orders of magnitude
-	// (docs/TODO_SIGNIFICANT.md SIG-5).
+	// (SIG-5).
 	embedBatchSize = 32
 )
 
@@ -65,7 +65,7 @@ type promptData struct {
 // unexported on purpose: production code keeps passing *repository.DB (which
 // satisfies it without any change), while unit tests can substitute an
 // in-memory store and observe whether embeddings were recomputed
-// (docs/TODO_SIGNIFICANT.md SIG-2).
+// (SIG-2).
 type documentStore interface {
 	SearchSimilar(ctx context.Context, queryEmbedding []float32, limit int, minScore float64) ([]repository.SearchResult, error)
 	CreateDocumentWithChunks(ctx context.Context, title, content string, chunks []string, embeddings [][]float32) (string, error)
@@ -101,7 +101,7 @@ func (e *Engine) Ask(ctx context.Context, question string) (string, []repository
 		return "", nil, fmt.Errorf("generate question embedding: %w", err)
 	}
 
-	// Step 2: Search for similar chunks, filtered by relevance floor (docs/FIXES.md #9).
+	// Step 2: Search for similar chunks, filtered by relevance floor.
 	results, err := e.repo.SearchSimilar(ctx, embedding, e.topK, e.minScore)
 	if err != nil {
 		return "", nil, fmt.Errorf("search similar chunks: %w", err)
@@ -179,7 +179,7 @@ func (e *Engine) IndexDocument(ctx context.Context, title, content string) (stri
 // UpsertResult tells the caller how much work UpsertDocumentWithChunks did.
 // The distinction matters for logging: created=false covers both "content
 // changed, embeddings regenerated" and "content identical, nothing computed"
-// (docs/TODO_SIGNIFICANT.md SIG-2).  A plain bool cannot separate them, so the
+// (SIG-2).  A plain bool cannot separate them, so the
 // startup log would not be able to report the real amount of skipped work.
 type UpsertResult struct {
 	DocID     string
@@ -196,7 +196,7 @@ type UpsertResult struct {
 // created=false and Ollama is not called at all.  Chunking is a pure function
 // of the content, so equal content means equal chunks and equal embeddings —
 // recomputing them would only repeat the previous result
-// (docs/TODO_SIGNIFICANT.md SIG-2).
+// (SIG-2).
 func (e *Engine) UpsertDocumentWithChunks(ctx context.Context, title, content string) (UpsertResult, error) {
 	// Best-effort pre-check: a concurrent writer may change the row between
 	// this read and the upsert below.  The cost of losing the race is one
