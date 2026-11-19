@@ -24,6 +24,11 @@ RUN apk add --no-cache ca-certificates curl && \
 
 COPY --from=builder /out/server /usr/local/bin/server
 
+# The vullist is read from disk at startup instead of being downloaded,
+# so it must be present in the runtime image at the process working directory.
+WORKDIR /app
+COPY --chown=app:app vullist.xlsx /app/vullist.xlsx
+
 USER app
 EXPOSE 8080
 

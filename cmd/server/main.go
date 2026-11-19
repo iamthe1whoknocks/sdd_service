@@ -131,11 +131,7 @@ func main() {
 	zapLogger.Info("server stopped")
 }
 
-// upsertOutcome names how much work a single UpsertDocumentWithChunks call
-// reported for one registry row.  It is extracted from initVulnlist so the
-// counting rules are unit-testable:
-// cmd/server has no tests of its own, and a misclassified row is exactly the
-// failure that makes the startup summary lie about skipped computation.
+// upsertOutcome counts statistics about initVulnlist work
 func upsertOutcome(res rag.UpsertResult) string {
 	switch {
 	case res.Unchanged:
@@ -148,14 +144,16 @@ func upsertOutcome(res rag.UpsertResult) string {
 }
 
 func initVulnlist(ctx context.Context, engine *rag.Engine, logger *zap.Logger) error {
-	logger.Info("downloading vullist from official source")
+	// Step 1: Read the Excel file from disk. The vullist.xlsx is shipped
+	// alongside the service, so no network access is required at startup.
+	const vullistPath = "vullist.xlsx"
+	logger.Info("reading vullist from file", zap.String("path", vullistPath))
 
-	// Step 1: Download the Excel file
-	data, err := vulnlist.Download(ctx)
+	data, err := os.ReadFile(vullistPath)
 	if err != nil {
-		return fmt.Errorf("download vullist: %w", err)
+		return fmt.Errorf("read vullist %q: %w", vullistPath, err)
 	}
-	logger.Info("vullist downloaded", zap.Int("size_bytes", len(data)))
+	logger.Info("vullist read", zap.String("path", vullistPath), zap.Int("size_bytes", len(data)))
 
 	// Step 2: Parse the Excel file
 	rows, err := vulnlist.Parse(data)
