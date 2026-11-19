@@ -7,8 +7,8 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// New создаёт настроенный Zap-логгер с цветным console-encoder.
-// Level задаёт минимальный уровень логирования (по умолчанию Info).
+// New creates a configured Zap logger with a colored console encoder.
+// Level sets the minimum log level (default: Info).
 func New(level zapcore.Level) (*zap.Logger, error) {
 	cfg := zap.NewProductionEncoderConfig()
 	cfg.TimeKey = "time"

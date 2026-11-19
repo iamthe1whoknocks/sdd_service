@@ -1,28 +1,28 @@
-// Package httperr предоставляет единый формат ошибок API:
+// Package httperr provides a unified API error format:
 // {"error": {"type": "...", "detail": "..."}}.
 //
-// Контракт задан в api/openapi.yaml (схема Error) и docs/spec.md §5.
-// Все источники ошибок (хендлеры, middleware, recover) обязаны
-// отдавать ответы через этот пакет, чтобы клиенты (SPA) могли
-// единообразно читать error.detail.
+// Contract defined in api/openapi.yaml (Error schema) and docs/spec.md §5.
+// All error sources (handlers, middleware, recover) must
+// return responses through this package so clients (SPA) can
+// uniformly read error.detail.
 package httperr
 
 import (
 	"github.com/labstack/echo/v4"
 )
 
-// Body — тело ошибки по схеме Error из OpenAPI.
+// Body — error body per OpenAPI Error schema.
 type Body struct {
 	Error Detail `json:"error"`
 }
 
-// Detail — детали ошибки (type/detail по RFC 7807-подобному соглашению).
+// Detail — error details (type/detail per RFC 7807-like convention).
 type Detail struct {
 	Type   string `json:"type,omitempty"`
 	Detail string `json:"detail,omitempty"`
 }
 
-// Write отдаёт HTTP-ответ с ошибкой в едином контрактном формате.
+// Write returns an HTTP error response in a unified contract format.
 func Write(c echo.Context, code int, etype, detail string) error {
 	return c.JSON(code, Body{Error: Detail{Type: etype, Detail: detail}})
 }

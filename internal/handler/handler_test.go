@@ -193,7 +193,7 @@ func TestAskNoRelevantData(t *testing.T) {
 		t.Fatalf("status = %d, want 200 (body=%v)", status, body)
 	}
 	if body["answer"] != "Релевантных данных в базе знаний не найдено." {
-		t.Errorf("answer = %v, want 'нет релевантных данных'", body["answer"])
+		t.Errorf("answer = %v, want 'Релевантных данных в базе знаний не найдено.'", body["answer"])
 	}
 	sources, ok := body["sources"].([]interface{})
 	if !ok || len(sources) != 0 {

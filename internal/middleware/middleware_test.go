@@ -12,18 +12,18 @@ import (
 	"go.uber.org/zap"
 )
 
-// assertErrorShape проверяет, что тело ответа содержит обёртку error
-// контрактного формата {"error": {"type", "detail"}} (api/openapi.yaml).
+// assertErrorShape verifies that the response body contains an error wrapper
+// in the contract format {"error": {"type", "detail"}} (api/openapi.yaml).
 func assertErrorShape(t *testing.T, status int, body string, wantStatus int) {
 	t.Helper()
 	if status != wantStatus {
 		t.Fatalf("status = %d, want %d (body=%s)", status, wantStatus, body)
 	}
 	if !strings.Contains(body, `"error"`) {
-		t.Errorf("в теле нет обёртки error: %s", body)
+		t.Errorf("error wrapper missing in body: %s", body)
 	}
 	if !strings.Contains(body, `"detail"`) {
-		t.Errorf("в теле нет error.detail: %s", body)
+		t.Errorf("error.detail missing in body: %s", body)
 	}
 }
 

